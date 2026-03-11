@@ -347,7 +347,7 @@ fn profile_card<'a>(index: usize, profile: &'a Profile) -> Element<'a, Message> 
             .padding(styles::PAD),
     )
     .style(styles::card_style)
-    .width(Length::Fixed(180.0))
+    .width(Length::Fixed(220.0))
     .into()
 }
 
