@@ -6,20 +6,14 @@ use crate::app::{Message, Mode};
 use crate::styles;
 
 pub fn view<'a>(mode: Mode, is_fullscreen: bool) -> Element<'a, Message> {
-    let enroll_btn = if mode == Mode::Enroll {
-        button("Enroll").style(styles::mode_btn_active)
-    } else {
-        button("Enroll")
-            .style(styles::mode_btn)
-            .on_press(Message::ModeChanged(Mode::Enroll))
-    };
-
-    let identify_btn = if mode == Mode::Identify {
-        button("Identify").style(styles::mode_btn_active)
-    } else {
-        button("Identify")
-            .style(styles::mode_btn)
-            .on_press(Message::ModeChanged(Mode::Identify))
+    let btn = |label: &'static str, m: Mode| {
+        if mode == m {
+            button(label).style(styles::mode_btn_active)
+        } else {
+            button(label)
+                .style(styles::mode_btn)
+                .on_press(Message::ModeChanged(m))
+        }
     };
 
     let fullscreen_btn = button(if is_fullscreen {
@@ -32,8 +26,8 @@ pub fn view<'a>(mode: Mode, is_fullscreen: bool) -> Element<'a, Message> {
 
     container(
         row![
-            enroll_btn,
-            identify_btn,
+            btn("Demo", Mode::Main),
+            btn("Profiles", Mode::Profiles),
             Space::new().width(Length::Fill),
             fullscreen_btn,
         ]

@@ -38,14 +38,12 @@ pub fn random_prompt() -> &'static str {
     PROMPTS[nanos % PROMPTS.len()]
 }
 
-// Raw keystroke event, mirroring the Aalto 136M dataset columns.
-// key is '\x08' for backspace, matching BKSP in the dataset.
 #[derive(Clone, Debug)]
 pub struct KeyEvent {
     pub key: char,
-    pub keycode: u32,  // hardware keycode matching the KEYCODE column in Aalto
-    pub press_ms: u64, // milliseconds from session start
-    pub release_ms: Option<u64>, // milliseconds from session start, None until released
+    pub keycode: u32,
+    pub press_ms: u64,
+    pub release_ms: Option<u64>,
 }
 
 impl KeyEvent {
@@ -54,31 +52,14 @@ impl KeyEvent {
     }
 }
 
-// Session holds all state for one typing session: raw events, bigram flight times,
-// and the display string shown in the typing widget.
 pub struct Session {
     pub text: String,
-
-    // Full raw event log including backspaces in chronological press order.
-    // This is the sequence the model will consume at inference time.
     pub events: Vec<KeyEvent>,
-
-    // Aggregated bigram flight times (press-to-press interval) per character pair,
-    // used for display and the current placeholder identifier.
     pub bigrams: HashMap<(char, char), Vec<f64>>,
-
-    // Chronological log of bigram entries for the live bar chart.
     pub log: Vec<((char, char), f64)>,
-
-    // Anchor timestamp for converting Instant values to session-relative milliseconds.
     start_time: Instant,
-
-    // Tracks the previous character and its press time for bigram computation.
     last_char: Option<char>,
     last_press: Option<Instant>,
-
-    // Maps each character to a stack of event indices waiting for a release.
-    // A stack handles the rare case of the same key being pressed again before releasing.
     pending_releases: HashMap<char, Vec<usize>>,
 }
 
@@ -98,11 +79,9 @@ impl Default for Session {
 }
 
 impl Session {
-    // Record a key press. t is captured at event time in the widget for accuracy.
     pub fn push_char(&mut self, ch: char, keycode: u32, t: Instant) {
         let press_ms = t.duration_since(self.start_time).as_millis() as u64;
 
-        // Compute bigram flight time (press-to-press interval).
         if let (Some(prev), Some(prev_t)) = (self.last_char, self.last_press) {
             let flight_ms = t.duration_since(prev_t).as_secs_f64() * 1000.0;
             self.bigrams.entry((prev, ch)).or_default().push(flight_ms);
@@ -122,8 +101,6 @@ impl Session {
         self.last_press = Some(t);
     }
 
-    // Record a key release. Matches to the most recent outstanding press of this key
-    // to fill in dwell time. t is captured at event time in the widget.
     pub fn push_release(&mut self, ch: char, t: Instant) {
         let release_ms = t.duration_since(self.start_time).as_millis() as u64;
         if let Some(stack) = self.pending_releases.get_mut(&ch) {
@@ -138,10 +115,6 @@ impl Session {
         }
     }
 
-    // Record a backspace press. The event goes into the raw log (corrections are a
-    // biometric signal) but the display text and bigram aggregates are unwound.
-    // Timing continuity is preserved through backspace so that backspace-to-next-char
-    // flight times are recorded, matching the Aalto dataset format.
     pub fn push_backspace(&mut self, t: Instant) {
         if self.text.is_empty() {
             return;
@@ -189,7 +162,6 @@ impl Session {
         *self = Self::default();
     }
 
-    // Returns averaged bigram flight times, used for display and the placeholder identifier.
     pub fn averaged(&self) -> HashMap<(char, char), f64> {
         self.bigrams
             .iter()
@@ -198,12 +170,9 @@ impl Session {
     }
 }
 
-// A saved user profile containing the raw event sequence and averaged bigram times.
 pub struct Profile {
     pub name: String,
-    // Full raw event sequence from enrollment. This is what the model trains and infers from.
     pub events: Vec<KeyEvent>,
-    // Averaged bigram flight times used for display in the info panel.
     pub bigrams: HashMap<(char, char), f64>,
 }
 
@@ -216,7 +185,6 @@ impl Profile {
         }
     }
 
-    // Returns bigrams sorted fastest to slowest, up to limit entries.
     pub fn top_bigrams(&self, limit: usize) -> Vec<((char, char), f64)> {
         let mut sorted: Vec<_> = self.bigrams.iter().map(|(k, v)| (*k, *v)).collect();
         sorted.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -225,16 +193,7 @@ impl Profile {
     }
 }
 
-// Identification stub. Will be replaced with a trained encoder model.
-//
-// Planned pipeline:
-//   1. Encode session.events into a fixed-size embedding vector via an LSTM or
-//      Transformer trained on the Aalto 136M dataset with triplet loss.
-//   2. Compute cosine similarity between the query embedding and each profile embedding.
-//   3. Return profiles ranked by similarity score, highest first.
-//
-// The model is text-independent: it works across different enrollment and identification
-// prompts because it learns the user's temporal rhythm, not character-specific bigram times.
+#[allow(dead_code)]
 pub fn identify(_session: &Session, profiles: &[Profile]) -> Vec<(String, f64)> {
     profiles.iter().map(|p| (p.name.clone(), 0.0)).collect()
 }

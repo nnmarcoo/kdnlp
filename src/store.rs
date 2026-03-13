@@ -5,10 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::typing::{KeyEvent, Profile};
 
-// Profiles are stored as JSON at the platform data directory.
-// Profile.bigrams uses tuple keys which are not valid JSON object keys,
-// so bigrams are serialized as an array of (first, second, ms) triples.
-
 #[derive(Serialize, Deserialize)]
 struct StoredKeyEvent {
     key: char,

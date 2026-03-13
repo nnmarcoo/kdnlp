@@ -11,7 +11,6 @@ use iced::{
 };
 use std::time::Instant;
 
-// Monospace character metrics at FONT_SIZE
 const FONT_SIZE: f32 = 16.0;
 const LINE_H: f32 = 30.0;
 const H_PAD: f32 = 14.0;
@@ -78,8 +77,7 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
     ) -> layout::Node {
         let max_w = limits.max().width;
         let usable_w = (max_w - 2.0 * H_PAD).max(1.0);
-        // Use approximate char width for layout estimation; draw corrects with measured value
-        let approx_char_w = 9.6_f32;
+        let approx_char_w = FONT_SIZE * 0.6;
         let positions = layout_chars(self.passage, 0.0, 0.0, usable_w, approx_char_w);
         let max_line_y = positions.iter().map(|p| p.y).fold(0.0_f32, f32::max);
         let lines = (max_line_y / LINE_H).ceil() as u32 + 1;
@@ -118,7 +116,6 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
                 text,
                 ..
             }) if state.focused => {
-                // Capture timestamp as close to the event as possible
                 let t = Instant::now();
                 match key {
                     Key::Named(Named::Backspace) => {
@@ -182,7 +179,6 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
         let bounds = layout.bounds();
         let palette = theme.extended_palette();
 
-        // Background + border
         renderer.fill_quad(
             Quad {
                 bounds,
@@ -200,7 +196,6 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
             Background::Color(palette.background.weak.color),
         );
 
-        // Measure actual char width once per draw using the renderer
         let char_w = {
             let para = <Renderer as text::Renderer>::Paragraph::with_text(Text {
                 content: "m",
@@ -248,7 +243,6 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
         };
 
         for (i, (&ch, pos)) in passage_chars.iter().zip(positions.iter()).enumerate() {
-            // Draw cursor before the character at typed_len
             if i == typed_chars.len() && state.focused {
                 draw_cursor(renderer, pos.x, pos.y);
             }
@@ -263,7 +257,6 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
                 color_dim
             };
 
-            // Render spaces only when wrong (as red underscore-like display)
             let render_ch = if ch == ' ' {
                 if i < typed_chars.len() && typed_chars[i] != ' ' {
                     '·'
@@ -292,7 +285,6 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
             );
         }
 
-        // Cursor after last character (passage complete)
         if typed_chars.len() >= passage_chars.len() {
             if let Some(last) = positions.last() {
                 if state.focused {
@@ -326,7 +318,6 @@ impl<'a, Message: Clone + 'a> From<TypingWidget<'a, Message>>
     }
 }
 
-/// Extract a numeric keycode from a physical key, matching the Aalto dataset's KEYCODE column.
 fn physical_keycode(key: &Physical) -> u32 {
     match key {
         Physical::Code(code) => *code as u32,
@@ -334,7 +325,6 @@ fn physical_keycode(key: &Physical) -> u32 {
     }
 }
 
-/// Map an iced Key to the char we track — used for KeyReleased where `text` is often None.
 fn key_to_char(key: &Key) -> Option<char> {
     match key {
         Key::Character(s) => s.chars().next().map(|c| c.to_ascii_lowercase()),
@@ -344,8 +334,6 @@ fn key_to_char(key: &Key) -> Option<char> {
     }
 }
 
-/// Compute the top-left Point of each character in `passage` given wrapping constraints.
-/// `start_x/y` is the origin. `max_x` is the right boundary. `char_w` is character advance width.
 fn layout_chars(passage: &str, start_x: f32, start_y: f32, max_x: f32, char_w: f32) -> Vec<Point> {
     let mut positions = Vec::with_capacity(passage.len());
     let mut x = start_x;
@@ -356,7 +344,6 @@ fn layout_chars(passage: &str, start_x: f32, start_y: f32, max_x: f32, char_w: f
 
     while i < n {
         if chars[i] == ' ' {
-            // Look ahead: how wide is the next word?
             let word_start = i + 1;
             let mut word_end = word_start;
             while word_end < n && chars[word_end] != ' ' {
@@ -365,7 +352,6 @@ fn layout_chars(passage: &str, start_x: f32, start_y: f32, max_x: f32, char_w: f
             let next_w = (word_end - word_start) as f32 * char_w;
 
             if x + char_w + next_w > max_x && x > start_x {
-                // Wrap: place the space off-screen to the right, start next word on new line
                 positions.push(Point::new(x, y));
                 x = start_x;
                 y += LINE_H;

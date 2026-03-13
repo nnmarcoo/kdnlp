@@ -2,15 +2,15 @@ use iced::alignment::Vertical;
 use iced::widget::{Space, button, column, container, row, text, text_input};
 use iced::{Color, Element, Length};
 
-use crate::app::{Message, Mode};
+use crate::app::Message;
 use crate::styles;
 use crate::typing::Session;
 use crate::widgets::typing_widget::TypingWidget;
 
 pub fn view<'a>(
-    mode: Mode,
     name_input: &'a str,
     session: &'a Session,
+    profiles_count: usize,
     prompt: &'a str,
 ) -> Element<'a, Message> {
     let typing = TypingWidget::new(
@@ -20,10 +20,10 @@ pub fn view<'a>(
         |ch, t| Message::KeyReleased(ch, t),
         |t| Message::Backspace(t),
         |t| Message::BackspaceReleased(t),
-        Message::Submit,
+        Message::Enroll,
     );
 
-    let controls = view_controls(mode, name_input, session);
+    let controls = view_controls(name_input, session, profiles_count);
 
     container(
         column![typing, controls]
@@ -35,24 +35,34 @@ pub fn view<'a>(
 }
 
 fn view_controls<'a>(
-    mode: Mode,
     name_input: &'a str,
     session: &'a Session,
+    profiles_count: usize,
 ) -> Element<'a, Message> {
-    let can_submit =
-        !session.text.is_empty() && (mode == Mode::Identify || !name_input.trim().is_empty());
+    let has_session = !session.is_empty();
+    let has_name = !name_input.trim().is_empty();
 
-    let submit_label = match mode {
-        Mode::Enroll => "Save Profile",
-        Mode::Identify => "Identify",
+    let name_field = text_input("Name", name_input)
+        .on_input(Message::NameChanged)
+        .on_submit(Message::Enroll)
+        .style(styles::name_input_style)
+        .padding([5, 10])
+        .width(Length::Fixed(140.0));
+
+    let enroll_btn = if has_session && has_name {
+        button("Enroll")
+            .style(styles::mode_btn_active)
+            .on_press(Message::Enroll)
+    } else {
+        button("Enroll").style(styles::mode_btn)
     };
 
-    let submit_btn = if can_submit {
-        button(submit_label)
+    let identify_btn = if has_session && profiles_count > 0 {
+        button("Identify")
             .style(styles::mode_btn_active)
-            .on_press(Message::Submit)
+            .on_press(Message::Identify)
     } else {
-        button(submit_label).style(styles::mode_btn)
+        button("Identify").style(styles::mode_btn)
     };
 
     let clear_btn = button("Clear")
@@ -63,32 +73,15 @@ fn view_controls<'a>(
         .size(12)
         .color(Color::from_rgb(0.45, 0.45, 0.45));
 
-    match mode {
-        Mode::Enroll => {
-            let name_field = text_input("Your name", name_input)
-                .on_input(Message::NameChanged)
-                .on_submit(Message::Submit)
-                .padding([8, styles::PAD as u16]);
-
-            row![
-                name_field,
-                submit_btn,
-                clear_btn,
-                Space::new().width(Length::Fill),
-                intervals,
-            ]
-            .spacing(styles::SPACING)
-            .align_y(Vertical::Center)
-            .into()
-        }
-        Mode::Identify => row![
-            submit_btn,
-            clear_btn,
-            Space::new().width(Length::Fill),
-            intervals,
-        ]
-        .spacing(styles::SPACING)
-        .align_y(Vertical::Center)
-        .into(),
-    }
+    row![
+        name_field,
+        enroll_btn,
+        identify_btn,
+        clear_btn,
+        Space::new().width(Length::Fill),
+        intervals,
+    ]
+    .spacing(styles::SPACING)
+    .align_y(Vertical::Center)
+    .into()
 }
