@@ -2,9 +2,8 @@
   <h1>kdnlp</h1>
   <p><em>keystroke dynamics profiling and identification</em></p>
 
-  ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-0077aa?style=for-the-badge)
   ![License](https://img.shields.io/badge/license-MIT-0077aa?style=for-the-badge)
-  ![Status](https://img.shields.io/badge/status-demo-0077aa?style=for-the-badge)
+  ![This](https://img.shields.io/badge/this-is%20a%20demo-0077aa?style=for-the-badge)
 </div>
 
 ---
