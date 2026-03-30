@@ -1,5 +1,6 @@
 /target
 .venv/
+__pycache__/
 
 # Aalto 136M dataset
 keystrokes/
