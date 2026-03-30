@@ -1,5 +1,9 @@
 /target
+.venv/
 
 # Aalto 136M dataset
 keystrokes/
 keystrokes.zip
+
+# Processed data
+python/processed/

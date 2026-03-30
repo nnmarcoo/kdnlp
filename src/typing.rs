@@ -52,6 +52,14 @@ impl KeyEvent {
     }
 }
 
+struct PendingFlight {
+    bigram: (char, char),
+    vec_idx: usize,
+    log_idx: usize,
+    next_press: Instant,
+    prev_char: char,
+}
+
 pub struct Session {
     pub text: String,
     pub events: Vec<KeyEvent>,
@@ -61,6 +69,7 @@ pub struct Session {
     last_char: Option<char>,
     last_press: Option<Instant>,
     pending_releases: HashMap<char, Vec<usize>>,
+    pending_flight: Option<PendingFlight>,
 }
 
 impl Default for Session {
@@ -74,6 +83,7 @@ impl Default for Session {
             last_char: None,
             last_press: None,
             pending_releases: HashMap::new(),
+            pending_flight: None,
         }
     }
 }
@@ -83,9 +93,23 @@ impl Session {
         let press_ms = t.duration_since(self.start_time).as_millis() as u64;
 
         if let (Some(prev), Some(prev_t)) = (self.last_char, self.last_press) {
-            let flight_ms = t.duration_since(prev_t).as_secs_f64() * 1000.0;
-            self.bigrams.entry((prev, ch)).or_default().push(flight_ms);
-            self.log.push(((prev, ch), flight_ms));
+            let bigram = (prev, ch);
+            let iki_ms = t.duration_since(prev_t).as_secs_f64() * 1000.0;
+
+            let vec = self.bigrams.entry(bigram).or_default();
+            let vec_idx = vec.len();
+            vec.push(iki_ms);
+
+            let log_idx = self.log.len();
+            self.log.push((bigram, iki_ms));
+
+            self.pending_flight = Some(PendingFlight {
+                bigram,
+                vec_idx,
+                log_idx,
+                next_press: t,
+                prev_char: prev,
+            });
         }
 
         let idx = self.events.len();
@@ -113,6 +137,27 @@ impl Session {
                 self.pending_releases.remove(&ch);
             }
         }
+
+        if let Some(pf) = self.pending_flight.take() {
+            if ch == pf.prev_char {
+                let flight_ms = match pf.next_press.checked_duration_since(t) {
+                    Some(dur) => dur.as_secs_f64() * 1000.0,
+                    None => -(t.duration_since(pf.next_press).as_secs_f64() * 1000.0),
+                };
+                if let Some(val) = self
+                    .bigrams
+                    .get_mut(&pf.bigram)
+                    .and_then(|v| v.get_mut(pf.vec_idx))
+                {
+                    *val = flight_ms;
+                }
+                if let Some(entry) = self.log.get_mut(pf.log_idx) {
+                    entry.1 = flight_ms;
+                }
+            } else {
+                self.pending_flight = Some(pf);
+            }
+        }
     }
 
     pub fn push_backspace(&mut self, t: Instant) {
@@ -129,6 +174,14 @@ impl Session {
             release_ms: None,
         });
         self.pending_releases.entry('\x08').or_default().push(idx);
+
+        if self
+            .pending_flight
+            .as_ref()
+            .is_some_and(|pf| pf.log_idx + 1 == self.log.len())
+        {
+            self.pending_flight = None;
+        }
 
         self.text.pop();
         if let Some(entry) = self.log.pop() {
