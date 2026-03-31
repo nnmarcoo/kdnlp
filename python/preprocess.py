@@ -5,10 +5,15 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+# Some keystroke files have very long lines, so remove the default CSV field size cap
 csv.field_size_limit(sys.maxsize)
 
+# Keys we want to skip - they aren't regular typed characters
 MODIFIERS = frozenset(("SHIFT", "CTRL", "ALT", "CAPSLOCK", "TAB", "BACKSPACE", "BKSP"))
 
+# Map each key on a QWERTY keyboard to an (row, col) position so we can
+# measure physical distance between keys later. The 0.25 offset per row
+# accounts for the stagger between keyboard rows.
 QWERTY_POS = {}
 for _r, _row in enumerate(["qwertyuiop", "asdfghjkl;", "zxcvbnm,./"]):
     for _c, _ch in enumerate(_row):
@@ -16,6 +21,7 @@ for _r, _row in enumerate(["qwertyuiop", "asdfghjkl;", "zxcvbnm,./"]):
 QWERTY_POS[" "] = (3, 4.5)
 
 
+# Straight-line distance between two keys on the keyboard
 def key_distance(a, b):
     pa, pb = QWERTY_POS.get(a), QWERTY_POS.get(b)
     if pa is None or pb is None:
@@ -23,6 +29,8 @@ def key_distance(a, b):
     return math.hypot(pa[0] - pb[0], pa[1] - pb[1])
 
 
+# Read a participant's raw keystroke file and group events by session.
+# Each event becomes a (press_time, release_time, key) tuple.
 def read_sessions(filepath):
     sessions = defaultdict(list)
     with open(filepath, errors="replace") as f:
@@ -36,6 +44,12 @@ def read_sessions(filepath):
     return sessions
 
 
+# Turn a sequence of keystrokes into bigram (key-pair) timing features.
+# For every consecutive pair of keys we compute:
+#   - iki:    inter-key interval (time between pressing key1 and key2)
+#   - dwell:  how long key1 was held down
+#   - flight: gap between releasing key1 and pressing key2
+# We toss out anything involving modifier keys or with implausible timings.
 def extract_bigrams(keystrokes):
     records = []
     for i in range(len(keystrokes) - 1):
@@ -50,6 +64,7 @@ def extract_bigrams(keystrokes):
         dwell = r1 - p1
         flight = p2 - r1
 
+        # Sanity check: drop negative timings or absurdly long pauses
         if iki < 0 or iki > 2000 or dwell < 0 or dwell > 1000:
             continue
 
@@ -57,6 +72,7 @@ def extract_bigrams(keystrokes):
     return records
 
 
+# Main pipeline: read raw keystroke files -> filter -> extract features -> write CSVs
 def process_all(data_dir, out_dir, min_sessions=3):
     data_path = Path(data_dir)
     out_path = Path(out_dir)
@@ -66,6 +82,8 @@ def process_all(data_dir, out_dir, min_sessions=3):
     total = len(files)
     print(f"Found {total} participant files")
 
+    # Pass 1: figure out which participants have enough data to be useful.
+    # We require at least `min_sessions` sessions, each with >= 5 keystrokes.
     print(f"\n[Pass 1/2] Scanning for participants with >= {min_sessions} sessions...")
     eligible_files = []
     for i, f in enumerate(files):
@@ -79,6 +97,9 @@ def process_all(data_dir, out_dir, min_sessions=3):
     n_eligible = len(eligible_files)
     print(f"  -> {n_eligible} eligible participants\n")
 
+    # Pass 2: for each eligible participant, extract bigram features and split
+    # into train/test. All sessions except the last go to train; the final
+    # session (chronologically) is held out for testing.
     print("[Pass 2/2] Extracting bigram features...")
     header = ["participant_id", "session_id", "bigram",
               "iki_ms", "dwell_ms", "flight_ms", "key_dist"]
@@ -100,6 +121,7 @@ def process_all(data_dir, out_dir, min_sessions=3):
             pid = f.stem.removesuffix("_keystrokes")
             sessions = read_sessions(f)
 
+            # Keep only sessions with enough keystrokes, sorted by time
             valid = []
             for sid, keystrokes in sessions.items():
                 if len(keystrokes) >= 5:
@@ -107,11 +129,13 @@ def process_all(data_dir, out_dir, min_sessions=3):
                     valid.append((sid, keystrokes))
             valid.sort(key=lambda s: s[1][0][0])
 
+            # Everything but the last session -> training data
             for sid, keystrokes in valid[:-1]:
                 for bg, iki, dwell, flight, dist in extract_bigrams(keystrokes):
                     tw.writerow([pid, sid, bg, iki, dwell, flight, f"{dist:.4f}"])
                     train_count += 1
 
+            # Last session -> test data
             for sid, keystrokes in valid[-1:]:
                 for bg, iki, dwell, flight, dist in extract_bigrams(keystrokes):
                     ew.writerow([pid, sid, bg, iki, dwell, flight, f"{dist:.4f}"])

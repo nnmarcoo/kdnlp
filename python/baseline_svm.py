@@ -5,9 +5,12 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 
+# The three timing features we care about for each bigram
 TIMING_COLS = ["iki_ms", "dwell_ms", "flight_ms"]
 
 
+# Build a typing profile for one user: for each bigram they typed,
+# average out the timing features and note how many times they typed it.
 def build_profile(df):
     profile = {}
     for bg, bdf in df.groupby("bigram"):
@@ -16,23 +19,39 @@ def build_profile(df):
     return profile
 
 
+# For each bigram, collect the mean and std of each timing feature across
+# all users. We need this so we can z-normalize later.
+#
+# Different bigrams have different raw timings - something like "th" is fast
+# for everyone (~80ms), while "qz" is slow for everyone (~300ms). Without
+# normalization, slow bigrams would dominate the distance calculation even
+# though a 20ms difference is equally meaningful on both. Z-normalizing
+# puts every bigram on the same scale.
 def compute_bigram_stats(profiles):
+    # First pass: gather each user's average for every bigram into lists
     vals = defaultdict(lambda: {col: [] for col in TIMING_COLS})
     for profile in profiles.values():
         for bg, feats in profile.items():
             for col in TIMING_COLS:
                 vals[bg][col].append(feats[col])
 
+    # Second pass: turn those lists into (mean, std) pairs
     stats = {}
     for bg, col_vals in vals.items():
         stats[bg] = {}
         for col in TIMING_COLS:
             v = col_vals[col]
             std = np.std(v)
+            # If std is 0 (everyone typed it the same), use 1 to avoid dividing by zero
             stats[bg][col] = (np.mean(v), std if std > 0 else 1.0)
     return stats
 
 
+# Apply z-normalization: for each bigram timing value, subtract the population
+# mean and divide by the population std. The result tells you how far this
+# user's timing is from the average, measured in standard deviations.
+# Example: a value of +1.5 means this user is 1.5 std devs slower than average
+# for that bigram. A value of -0.8 means they're 0.8 std devs faster.
 def normalize_profile(profile, stats):
     normed = {}
     for bg, feats in profile.items():
@@ -45,6 +64,9 @@ def normalize_profile(profile, stats):
     return normed
 
 
+# Compare two profiles using weighted Euclidean distance over shared bigrams.
+# Bigrams with more observations get higher weight (more reliable signal).
+# Lower score = more similar typing style.
 def compare_profiles(enrolled, test):
     shared = enrolled.keys() & test.keys()
     if not shared:
@@ -68,6 +90,8 @@ def run(data_dir, n_users_list, seed=42):
     train_df = pd.read_csv(f"{data_dir}/train.csv")
     test_df = pd.read_csv(f"{data_dir}/test.csv")
 
+    # Randomly sample a pool of participants up to the largest group size
+    # we'll test. This way smaller subsets are always strict subsets of larger ones.
     all_pids = sorted(train_df["participant_id"].unique())
     max_users = max(n_users_list)
     pool = sorted(random.sample(list(all_pids), min(max_users, len(all_pids))))
@@ -77,15 +101,22 @@ def run(data_dir, n_users_list, seed=42):
     print(f"Pool: {len(pool)} participants")
     print(f"Train bigrams: {len(train_df)}, Test bigrams: {len(test_df)}")
 
+    # Create one typing profile per user from their training sessions
     print("Building per-user profiles...")
     profiles = {}
     for pid, udf in train_df.groupby("participant_id"):
         profiles[pid] = build_profile(udf)
 
+    # Figure out the population mean/std for each bigram, then normalize
+    # every user's profile. After this, we're comparing typing patterns
+    # (who is relatively faster or slower on which bigrams) instead of
+    # raw millisecond values that would be dominated by overall typing speed.
     print("Z-normalizing per bigram across users...")
     stats = compute_bigram_stats(profiles)
     norm_profiles = {pid: normalize_profile(p, stats) for pid, p in profiles.items()}
 
+    # Build one test sample per (participant, session) - each is a mini-profile
+    # from a session the model hasn't seen during enrollment
     print("Building test samples...")
     test_samples = []
     for (pid, sid), sdf in test_df.groupby(["participant_id", "session_id"]):
@@ -98,6 +129,9 @@ def run(data_dir, n_users_list, seed=42):
     print(f"Profiles: {len(profiles)}, Test samples: {len(test_samples)}")
     print(f"Avg bigrams per profile: {avg_profile:.0f}, per test: {avg_test:.0f}")
 
+    # Evaluate at each group size: for every test sample, rank all enrolled
+    # users by distance and check if the true user lands in rank 1 or top 5.
+    # "Random" column shows the chance baseline (1/n_users).
     print("\n" + "=" * 60)
     print(f"{'n_users':>8} {'Rank-1':>10} {'Top-5':>10} {'Random':>10}")
     print("=" * 60)
@@ -109,6 +143,7 @@ def run(data_dir, n_users_list, seed=42):
 
         correct_1 = correct_5 = 0
         for true_pid, test_profile in sub_tests:
+            # Rank all enrolled users by how closely they match this test sample
             ranked = sorted(
                 ((compare_profiles(ep, test_profile), pid)
                  for pid, ep in sub_profiles.items()),
