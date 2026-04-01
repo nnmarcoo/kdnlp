@@ -2,31 +2,14 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 pub const PROMPTS: &[&str] = &[
-    "the morning light filtered through the curtains as she made her coffee and carefully read the news before heading out to meet her friends at the park",
-    "he opened the old wooden door and stepped into the quiet library where rows of books lined the shelves from floor to ceiling in every direction",
-    "the children played in the garden while their parents sat on the porch and watched the clouds drift slowly across the bright blue summer sky",
-    "she typed the last few words of her report and saved the file before closing her laptop and walking over to the window to look out at the street",
-    "after a long day at work he decided to take a different route home and stopped at the small bakery on the corner to pick up some fresh bread",
-    "the train pulled into the station just as the sun began to set and the passengers gathered their bags and prepared to step out onto the platform",
-    "they walked along the riverbank collecting stones and talking about their plans for the coming months as the water flowed gently past the old bridge",
-    "the coffee shop on the corner was always busy on weekday mornings with people stopping in before work to grab a drink and a quick breakfast",
-    "she found the old photograph at the back of the drawer and sat down at the kitchen table to look at it more carefully in the afternoon light",
-    "the team worked late into the night to finish the project before the deadline and everyone was relieved when they finally submitted the files",
-    "he decided to spend the afternoon reading in the garden and made himself a cup of tea before settling into his favorite chair by the window",
-    "she had always wanted to learn how to play the piano and finally signed up for lessons at the music school near her apartment that spring",
-    "the restaurant was fully booked for the evening so they decided to cook at home and opened a bottle of wine while preparing dinner together",
-    "he checked his phone and saw several missed calls from his sister before realizing he had left it on silent since the early morning meeting",
-    "the small bookshop at the end of the street had been there for decades and was known for its carefully chosen selection of second hand novels",
-    "she noticed the sky had turned dark while she was working and quickly gathered her things before the rain started to fall on the empty street",
-    "they spent the weekend hiking through the forest and came across a narrow path that led down to a quiet lake hidden among the trees below",
-    "the students gathered in the hall early to review their notes before the exam started and the room was almost completely silent for once",
-    "he spent most of the evening sorting through old boxes in the attic and discovered letters and photographs he had completely forgotten about",
-    "the road into town was closed for repairs so they had to take the longer route through the valley which added nearly half an hour to the trip",
-    "she remembered leaving her keys on the counter but when she went back to look for them they were nowhere to be found anywhere in the flat",
-    "the dog ran across the field and jumped over the fence before disappearing into the tall grass near the edge of the old farmhouse property",
-    "he wrote a short letter to his friend explaining why he had missed the meeting and promised to call later that same evening to apologize",
-    "the conference was held in a large hotel near the edge of the city and brought together speakers and researchers from universities all around",
-    "she packed her bag the night before and set her alarm early so she would have enough time to catch the first train downtown in the morning",
+    "sphinx of black quartz judge my vow and exempt the dwarves from working on fixed lazy summer days objective journalism requires exceptionally bold workers who verify all fuzzy details with skepticism the bulky freezer was jammed awkwardly behind six crates of expensive cognac and dry vermouth bottles back in my quaint garden jaunty zinnias vie with flaxen blooming orchids and plump kumquats on hedges my grandmother fixed the broken jukebox with quiet zeal and played jazzy gospel hymns every weeknight",
+    "bravely exploring jungles of zurich and queensland the kayaker found six wedge shaped topaz crystals the job requires extra pluck and zeal from every young wage earner who is ambitious for advancement a wrathful zephyr blew dark clouds above the tranquil bay just mixing up every sailboat in the fjord jackhammers vibrated wildly as the expert dozed off by the frozen lake gazing up quietly at six moons we publicized the quirky festival by fixing a jumbo sign above the roadway behind the old gymnasium",
+    "the grumpy wizard makes toxic brew for the evil queen and jovial dwarfs who explore a hidden kingdom a lynx crept above the frozen quagmire deftly jumping over wet shrubs and catching six plump voles the morning light filtered through the curtains as she made her coffee and carefully read the news oxygen is required for combustion but the frozen liquid vaporized abruptly causing extreme hazards the complex fudge recipe was analyzed by experts who rejected adding kumquat flavor to the brown glaze",
+    "crazy frederick bought many very exquisite opal jewels and hid them in a quaint shop by the lakefront she explored the fjord at dusk when heavy fog enveloped the rocky coastline and obscured her kayak path pack my box with five dozen liquor jugs and ship them quickly before the amazing sunset fades away the students gathered in the hall early to review their notes before the exam started that afternoon the coffee shop on the corner was always busy on weekday mornings with people stopping in before work",
+    "the quick brown fox jumps over a lazy dog while searching for exotic herbs and crazy byzantine jewels few quips galvanized the mock jury pool and the brazen witness left the stand in extreme shock today the anxious boy gazed up at the jovial queen who was adjusting her bronze crown and long velvet cloak the perplexed janitor quietly fixed two broken gavels while the amazed jury observed from the balcony we promptly judged antique ivory buckles for the next prize and the crazy shopkeeper was exuberant",
+    "they spent the weekend hiking through the forest and came across a narrow path leading to a quiet lake he checked his phone and saw several missed calls from his sister before realizing it was on silent he opened the old wooden door and stepped into the quiet library where rows of books lined the shelves the train pulled into the station just as the sun began to set and the passengers gathered their bags she typed the last few words of her report and saved the file before closing her laptop for the day",
+    "the dog ran across the field and jumped over the fence before disappearing into the tall grass nearby they walked along the riverbank collecting stones and talking about their plans for the coming months she noticed the sky had turned dark while she was working and quickly gathered her things for the walk after a long day at work he decided to take a different route home and stopped at the small bakery the restaurant was fully booked for the evening so they decided to cook at home and opened some wine",
+    "she remembered leaving her keys on the counter but when she went back they were nowhere to be found",
 ];
 
 pub fn random_prompt() -> &'static str {
@@ -211,6 +194,39 @@ impl Session {
         self.bigrams.is_empty()
     }
 
+    pub fn wpm(&self) -> f64 {
+        if self.events.len() < 2 {
+            return 0.0;
+        }
+        let last = &self.events[self.events.len() - 1];
+        let first = &self.events[0];
+        let elapsed_ms = last.press_ms.saturating_sub(first.press_ms) as f64;
+        if elapsed_ms < 1.0 {
+            return 0.0;
+        }
+        let words = self.text.len() as f64 / 5.0;
+        words / (elapsed_ms / 60_000.0)
+    }
+
+    pub fn avg_interval_ms(&self) -> f64 {
+        if self.log.is_empty() {
+            return 0.0;
+        }
+        self.log.iter().map(|(_, ms)| ms).sum::<f64>() / self.log.len() as f64
+    }
+
+    pub fn avg_dwell_ms(&self) -> f64 {
+        let dwells: Vec<f64> = self.events.iter().filter_map(|e| e.dwell_ms()).collect();
+        if dwells.is_empty() {
+            return 0.0;
+        }
+        dwells.iter().sum::<f64>() / dwells.len() as f64
+    }
+
+    pub fn unique_bigram_count(&self) -> usize {
+        self.bigrams.len()
+    }
+
     pub fn clear(&mut self) {
         *self = Self::default();
     }
@@ -227,6 +243,8 @@ pub struct Profile {
     pub name: String,
     pub events: Vec<KeyEvent>,
     pub bigrams: HashMap<(char, char), f64>,
+    pub char_count: usize,
+    pub interval_count: usize,
 }
 
 impl Profile {
@@ -235,14 +253,37 @@ impl Profile {
             name,
             events: session.events.clone(),
             bigrams: session.averaged(),
+            char_count: session.text.len(),
+            interval_count: session.interval_count(),
         }
     }
 
-    pub fn top_bigrams(&self, limit: usize) -> Vec<((char, char), f64)> {
-        let mut sorted: Vec<_> = self.bigrams.iter().map(|(k, v)| (*k, *v)).collect();
-        sorted.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        sorted.truncate(limit);
-        sorted
+    pub fn wpm(&self) -> f64 {
+        if self.events.len() < 2 {
+            return 0.0;
+        }
+        let first = self.events[0].press_ms;
+        let last = self.events[self.events.len() - 1].press_ms;
+        let elapsed_ms = last.saturating_sub(first) as f64;
+        if elapsed_ms < 1.0 {
+            return 0.0;
+        }
+        (self.char_count as f64 / 5.0) / (elapsed_ms / 60_000.0)
+    }
+
+    pub fn avg_interval_ms(&self) -> f64 {
+        if self.bigrams.is_empty() {
+            return 0.0;
+        }
+        self.bigrams.values().sum::<f64>() / self.bigrams.len() as f64
+    }
+
+    pub fn avg_dwell_ms(&self) -> f64 {
+        let dwells: Vec<f64> = self.events.iter().filter_map(|e| e.dwell_ms()).collect();
+        if dwells.is_empty() {
+            return 0.0;
+        }
+        dwells.iter().sum::<f64>() / dwells.len() as f64
     }
 }
 

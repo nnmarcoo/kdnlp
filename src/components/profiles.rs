@@ -1,12 +1,12 @@
 use iced::alignment::Vertical;
 use iced::widget::scrollable::{Direction, Scrollbar};
-use iced::widget::tooltip::Position;
-use iced::widget::{Space, button, column, container, row, scrollable, text, tooltip};
-use iced::{Background, Color, Element, Length};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
+use iced::{Color, Element, Length};
 
 use crate::app::Message;
 use crate::styles;
-use crate::typing::{KeyEvent, Profile, display_char};
+use crate::typing::Profile;
+use crate::widgets::bar_chart::Heatmap;
 
 pub fn view<'a>(profiles: &'a [Profile]) -> Element<'a, Message> {
     if profiles.is_empty() {
@@ -27,7 +27,7 @@ pub fn view<'a>(profiles: &'a [Profile]) -> Element<'a, Message> {
         .map(|(i, p)| profile_card(i, p))
         .collect();
 
-    let content = row(cards).spacing(10).wrap();
+    let content = row(cards).spacing(12).wrap();
 
     scrollable(container(content).padding(styles::PAD).width(Length::Fill))
         .direction(Direction::Vertical(
@@ -40,9 +40,6 @@ pub fn view<'a>(profiles: &'a [Profile]) -> Element<'a, Message> {
 }
 
 fn profile_card<'a>(index: usize, profile: &'a Profile) -> Element<'a, Message> {
-    let n_backspaces = profile.events.iter().filter(|e| e.key == '\x08').count();
-    let avg_dwell = avg_dwell_ms(&profile.events);
-
     let del_btn = button(text("Delete").size(11))
         .style(styles::delete_btn)
         .padding([2, 6])
@@ -50,100 +47,53 @@ fn profile_card<'a>(index: usize, profile: &'a Profile) -> Element<'a, Message> 
 
     let header = row![
         text(profile.name.as_str())
-            .size(13)
-            .color(Color::from_rgb(0.88, 0.88, 0.88)),
+            .size(14)
+            .color(Color::from_rgb(0.90, 0.90, 0.90)),
         Space::new().width(Length::Fill),
         del_btn,
     ]
     .align_y(Vertical::Center);
 
-    let tip = |t: &'static str| {
-        container(text(t).size(11))
-            .padding([4, 8])
-            .style(styles::tooltip_style)
-    };
-    let meta = row![
-        tooltip(
-            text(format!("{}", profile.bigrams.len()))
-                .size(11)
-                .color(dim()),
-            tip("bigrams"),
-            Position::Bottom,
-        ),
-        text("  ").size(11),
-        tooltip(
-            text(format!("{}", n_backspaces)).size(11).color(dim()),
-            tip("corrections"),
-            Position::Bottom,
-        ),
-        text("  ").size(11),
-        tooltip(
-            text(avg_dwell.map_or("—".into(), |d| format!("{:.0}ms", d)))
-                .size(11)
-                .color(dim()),
-            tip("avg dwell time"),
-            Position::Bottom,
-        ),
+    let stats = row![
+        stat_label(&format!("{:.0}", profile.wpm()), "WPM"),
+        Space::new().width(8.0),
+        stat_label(&format!("{:.0}ms", profile.avg_interval_ms()), "avg"),
+        Space::new().width(8.0),
+        stat_label(&format!("{:.0}ms", profile.avg_dwell_ms()), "dwell"),
+        Space::new().width(8.0),
+        stat_label(&format!("{}", profile.bigrams.len()), "bigrams"),
+        Space::new().width(8.0),
+        stat_label(&format!("{}", profile.interval_count), "total"),
+        Space::new().width(Length::Fill),
     ]
     .align_y(Vertical::Center);
 
-    let top = profile.top_bigrams(profile.bigrams.len());
-    let min_ms = top.first().map(|(_, ms)| *ms).unwrap_or(0.0);
-    let max_ms = top.last().map(|(_, ms)| *ms).unwrap_or(1.0);
-    let range = (max_ms - min_ms).max(1.0);
-
-    let flight_rows: Vec<Element<'_, Message>> = top
-        .into_iter()
-        .map(|((a, b), ms)| {
-            let ratio = ((ms - min_ms) / range).clamp(0.0, 1.0) as f32;
-            let swatch_color = Color::from_rgb(
-                0.38 + 0.54 * ratio,
-                0.82 - 0.47 * ratio,
-                0.48 - 0.13 * ratio,
-            );
-            row![
-                text(format!("{} {}", display_char(a), display_char(b)))
-                    .size(11)
-                    .color(Color::from_rgb(0.72, 0.72, 0.72)),
-                container(Space::new().height(10.0))
-                    .width(Length::Fill)
-                    .style(move |_: &iced::Theme| iced::widget::container::Style {
-                        background: Some(Background::Color(swatch_color)),
-                        border: iced::border::rounded(2.0),
-                        ..Default::default()
-                    }),
-                text(format!("{:.0}ms", ms)).size(11).color(dim()),
-            ]
-            .align_y(Vertical::Center)
-            .spacing(5)
-            .into()
-        })
-        .collect();
-
-    let flight_list = scrollable(column(flight_rows).spacing(3))
-        .direction(Direction::Vertical(
-            Scrollbar::new().width(3).scroller_width(3),
-        ))
-        .style(styles::invisible_scroll)
-        .height(Length::Fixed(80.0));
+    let heatmap = Heatmap::new(&profile.bigrams);
 
     container(
-        column![header, meta, flight_list]
-            .spacing(8)
-            .padding(styles::PAD),
+        column![
+            header,
+            stats,
+            container(heatmap).width(Length::Fill).height(Length::Fill),
+        ]
+        .spacing(8)
+        .padding(styles::PAD),
     )
     .style(styles::card_style)
-    .width(Length::Fixed(200.0))
+    .width(Length::Fixed(280.0))
+    .height(Length::Fixed(300.0))
     .into()
 }
 
-fn avg_dwell_ms(events: &[KeyEvent]) -> Option<f64> {
-    let vals: Vec<f64> = events
-        .iter()
-        .filter(|e| e.key != '\x08')
-        .filter_map(|e| e.dwell_ms())
-        .collect();
-    (!vals.is_empty()).then(|| vals.iter().sum::<f64>() / vals.len() as f64)
+fn stat_label<'a>(value: &str, label: &'a str) -> Element<'a, Message> {
+    column![
+        text(value.to_string())
+            .size(12)
+            .color(Color::from_rgb(0.80, 0.80, 0.80)),
+        text(label).size(9).color(dim()),
+    ]
+    .spacing(1)
+    .into()
 }
 
 fn dim() -> Color {

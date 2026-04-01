@@ -18,6 +18,10 @@ struct StoredProfile {
     name: String,
     events: Vec<StoredKeyEvent>,
     bigrams: Vec<(char, char, f64)>,
+    #[serde(default)]
+    char_count: usize,
+    #[serde(default)]
+    interval_count: usize,
 }
 
 fn profiles_path() -> Option<PathBuf> {
@@ -77,26 +81,43 @@ fn profile_to_stored(p: &Profile) -> StoredProfile {
             })
             .collect(),
         bigrams: p.bigrams.iter().map(|(&(a, b), &ms)| (a, b, ms)).collect(),
+        char_count: p.char_count,
+        interval_count: p.interval_count,
     }
 }
 
 fn stored_to_profile(s: StoredProfile) -> Profile {
+    let events: Vec<KeyEvent> = s
+        .events
+        .into_iter()
+        .map(|e| KeyEvent {
+            key: e.key,
+            keycode: e.keycode,
+            press_ms: e.press_ms,
+            release_ms: e.release_ms,
+        })
+        .collect();
+    let bigrams: HashMap<(char, char), f64> = s
+        .bigrams
+        .into_iter()
+        .map(|(a, b, ms)| ((a, b), ms))
+        .collect();
+    // Backfill for profiles saved before these fields existed
+    let char_count = if s.char_count > 0 {
+        s.char_count
+    } else {
+        events.iter().filter(|e| e.key != '\x08').count()
+    };
+    let interval_count = if s.interval_count > 0 {
+        s.interval_count
+    } else {
+        bigrams.len()
+    };
     Profile {
         name: s.name,
-        events: s
-            .events
-            .into_iter()
-            .map(|e| KeyEvent {
-                key: e.key,
-                keycode: e.keycode,
-                press_ms: e.press_ms,
-                release_ms: e.release_ms,
-            })
-            .collect(),
-        bigrams: s
-            .bigrams
-            .into_iter()
-            .map(|(a, b, ms)| ((a, b), ms))
-            .collect::<HashMap<_, _>>(),
+        events,
+        bigrams,
+        char_count,
+        interval_count,
     }
 }
