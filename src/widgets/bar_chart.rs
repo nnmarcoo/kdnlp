@@ -69,7 +69,6 @@ impl<Message: 'static> Widget<Message, iced::Theme, Renderer> for Heatmap {
             return;
         }
 
-        // Collect unique chars that appear, sorted
         let mut chars = BTreeSet::new();
         for &(a, b) in self.avgs.keys() {
             chars.insert(a);
@@ -83,23 +82,19 @@ impl<Message: 'static> Widget<Message, iced::Theme, Renderer> for Heatmap {
 
         let avgs = &self.avgs;
 
-        // Global min/max for color scale
-        let all_vals: Vec<f64> = avgs.values().copied().collect();
-        let global_min = all_vals.iter().copied().fold(f64::INFINITY, f64::min);
-        let global_max = all_vals
-            .iter()
-            .copied()
-            .fold(f64::NEG_INFINITY, f64::max)
-            .max(global_min + 1.0);
+        let (global_min, global_max_raw) = avgs
+            .values()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(mn, mx), &v| {
+                (mn.min(v), mx.max(v))
+            });
+        let global_max = global_max_raw.max(global_min + 1.0);
 
         let palette = theme.extended_palette();
 
-        // Measure header width: widest char label
         let header_w = LABEL_SIZE * 0.7 + HEADER_PAD;
 
-        // Cell size: fit grid into available space
         let avail_w = bounds.width - header_w;
-        let avail_h = bounds.height - header_w; // top header row takes same space
+        let avail_h = bounds.height - header_w;
         let cell = ((avail_w / n as f32).min(avail_h / n as f32))
             .max(2.0)
             .floor();
@@ -107,14 +102,12 @@ impl<Message: 'static> Widget<Message, iced::Theme, Renderer> for Heatmap {
         let grid_w = n as f32 * cell;
         let grid_h = n as f32 * cell;
 
-        // Center the grid in available space
         let grid_x = bounds.x + header_w + ((avail_w - grid_w).max(0.0)) / 2.0;
         let grid_y = bounds.y + header_w + ((avail_h - grid_h).max(0.0)) / 2.0;
 
         let dim_color = Color::from_rgb(0.50, 0.50, 0.50);
         let empty_color = palette.background.strong.color;
 
-        // Column headers (top)
         for (ci, &ch) in chars.iter().enumerate() {
             let x = grid_x + ci as f32 * cell;
             let y = grid_y - header_w;
@@ -136,7 +129,6 @@ impl<Message: 'static> Widget<Message, iced::Theme, Renderer> for Heatmap {
             );
         }
 
-        // Row headers (left)
         for (ri, &ch) in chars.iter().enumerate() {
             let x = grid_x - header_w;
             let y = grid_y + ri as f32 * cell;
@@ -158,7 +150,6 @@ impl<Message: 'static> Widget<Message, iced::Theme, Renderer> for Heatmap {
             );
         }
 
-        // Grid cells
         for (ri, &row_ch) in chars.iter().enumerate() {
             for (ci, &col_ch) in chars.iter().enumerate() {
                 let cx = grid_x + ci as f32 * cell + CELL_PAD;
@@ -187,7 +178,6 @@ impl<Message: 'static> Widget<Message, iced::Theme, Renderer> for Heatmap {
                     Background::Color(color),
                 );
 
-                // Show ms value in cells if they're big enough
                 if cw >= 22.0 {
                     if let Some(&ms) = avgs.get(&(row_ch, col_ch)) {
                         let text_color = if is_dark(color) {
@@ -235,7 +225,6 @@ impl<'a, Message: 'static> From<Heatmap> for Element<'a, Message, iced::Theme, R
     }
 }
 
-/// Maps a value in [min, max] to a green→yellow→red gradient.
 fn heat_color(ms: f64, min: f64, max: f64) -> Color {
     let range = max - min;
     let t = if range > 0.0 {
@@ -244,7 +233,6 @@ fn heat_color(ms: f64, min: f64, max: f64) -> Color {
         0.5
     };
 
-    // 0.0 = fastest (green), 0.5 = mid (yellow), 1.0 = slowest (red)
     if t < 0.5 {
         let s = t * 2.0;
         Color::from_rgb(0.20 + 0.75 * s, 0.78 - 0.08 * s, 0.40 - 0.32 * s)

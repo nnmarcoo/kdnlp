@@ -55,11 +55,11 @@ fn profile_card<'a>(index: usize, profile: &'a Profile) -> Element<'a, Message> 
     .align_y(Vertical::Center);
 
     let stats = row![
-        stat_label(&format!("{:.0}", profile.wpm()), "WPM"),
+        stat_label(&format!("{:.0}", profile.wpm), "WPM"),
         Space::new().width(8.0),
         stat_label(&format!("{:.0}ms", profile.avg_interval_ms()), "avg"),
         Space::new().width(8.0),
-        stat_label(&format!("{:.0}ms", profile.avg_dwell_ms()), "dwell"),
+        stat_label(&format!("{:.0}ms", profile.avg_dwell_ms), "dwell"),
         Space::new().width(8.0),
         stat_label(&format!("{}", profile.bigrams.len()), "bigrams"),
         Space::new().width(8.0),

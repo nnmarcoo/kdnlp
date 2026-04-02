@@ -9,9 +9,6 @@ use crate::plots;
 use crate::store;
 use crate::typing::{Profile, Session, random_prompt};
 
-// TOOD: If the user enrolls as someone who already exists in the profiles, we should just
-// combine the data instead of making a new one!!!
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mode {
     Main,
@@ -111,8 +108,54 @@ impl App {
                     return Task::none();
                 }
                 let name = self.name_input.trim().to_lowercase();
-                self.profiles
-                    .push(Profile::from_session(name, &self.session));
+                if let Some(existing) = self.profiles.iter_mut().find(|p| p.name == name) {
+                    let new_bigrams = self.session.averaged();
+                    for (bigram, new_avg) in &new_bigrams {
+                        let new_count = self.session.bigrams[bigram].len();
+                        let new_sum = new_avg * new_count as f64;
+                        let old_count = existing.bigram_counts.get(bigram).copied().unwrap_or(1);
+                        let total_count = old_count + new_count;
+                        existing
+                            .bigrams
+                            .entry(*bigram)
+                            .and_modify(|old_avg| {
+                                *old_avg =
+                                    (*old_avg * old_count as f64 + new_sum) / total_count as f64;
+                            })
+                            .or_insert(*new_avg);
+                        existing
+                            .bigram_counts
+                            .entry(*bigram)
+                            .and_modify(|c| *c += new_count)
+                            .or_insert(new_count);
+                    }
+                    let new_chars = self.session.text.len();
+                    let total_chars = existing.char_count + new_chars;
+                    if total_chars > 0 {
+                        existing.wpm = (existing.wpm * existing.char_count as f64
+                            + self.session.wpm() * new_chars as f64)
+                            / total_chars as f64;
+                    }
+                    let new_dwell_count = self
+                        .session
+                        .events
+                        .iter()
+                        .filter(|e| e.release_ms.is_some())
+                        .count();
+                    let total_dwell = existing.dwell_count + new_dwell_count;
+                    if total_dwell > 0 {
+                        existing.avg_dwell_ms = (existing.avg_dwell_ms
+                            * existing.dwell_count as f64
+                            + self.session.avg_dwell_ms() * new_dwell_count as f64)
+                            / total_dwell as f64;
+                    }
+                    existing.dwell_count += new_dwell_count;
+                    existing.char_count += new_chars;
+                    existing.interval_count += self.session.interval_count();
+                } else {
+                    self.profiles
+                        .push(Profile::from_session(name, &self.session));
+                }
                 store::save(&self.profiles);
                 self.name_input.clear();
                 self.session.clear();

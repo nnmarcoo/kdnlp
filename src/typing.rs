@@ -22,6 +22,7 @@ pub fn random_prompt() -> &'static str {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct KeyEvent {
     pub key: char,
     pub keycode: u32,
@@ -241,34 +242,32 @@ impl Session {
 
 pub struct Profile {
     pub name: String,
-    pub events: Vec<KeyEvent>,
     pub bigrams: HashMap<(char, char), f64>,
+    pub bigram_counts: HashMap<(char, char), usize>,
     pub char_count: usize,
     pub interval_count: usize,
+    pub wpm: f64,
+    pub avg_dwell_ms: f64,
+    pub dwell_count: usize,
 }
 
 impl Profile {
     pub fn from_session(name: String, session: &Session) -> Self {
+        let dwell_count = session
+            .events
+            .iter()
+            .filter(|e| e.release_ms.is_some())
+            .count();
         Self {
             name,
-            events: session.events.clone(),
             bigrams: session.averaged(),
+            bigram_counts: session.bigrams.iter().map(|(&k, v)| (k, v.len())).collect(),
             char_count: session.text.len(),
             interval_count: session.interval_count(),
+            wpm: session.wpm(),
+            avg_dwell_ms: session.avg_dwell_ms(),
+            dwell_count,
         }
-    }
-
-    pub fn wpm(&self) -> f64 {
-        if self.events.len() < 2 {
-            return 0.0;
-        }
-        let first = self.events[0].press_ms;
-        let last = self.events[self.events.len() - 1].press_ms;
-        let elapsed_ms = last.saturating_sub(first) as f64;
-        if elapsed_ms < 1.0 {
-            return 0.0;
-        }
-        (self.char_count as f64 / 5.0) / (elapsed_ms / 60_000.0)
     }
 
     pub fn avg_interval_ms(&self) -> f64 {
@@ -276,14 +275,6 @@ impl Profile {
             return 0.0;
         }
         self.bigrams.values().sum::<f64>() / self.bigrams.len() as f64
-    }
-
-    pub fn avg_dwell_ms(&self) -> f64 {
-        let dwells: Vec<f64> = self.events.iter().filter_map(|e| e.dwell_ms()).collect();
-        if dwells.is_empty() {
-            return 0.0;
-        }
-        dwells.iter().sum::<f64>() / dwells.len() as f64
     }
 }
 

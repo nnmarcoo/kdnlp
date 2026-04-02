@@ -17,20 +17,6 @@ pub fn name_input_style(theme: &Theme, status: text_input::Status) -> text_input
     }
 }
 
-pub fn tooltip_style(theme: &Theme) -> container::Style {
-    let palette = theme.extended_palette();
-    container::Style {
-        text_color: Some(palette.background.base.text),
-        background: Some(Background::Color(palette.background.weak.color)),
-        border: iced::Border {
-            color: palette.background.strong.color,
-            width: 1.0,
-            radius: 6.0.into(),
-        },
-        ..Default::default()
-    }
-}
-
 pub fn bar_style(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();
     container::Style {

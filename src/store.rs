@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::typing::{KeyEvent, Profile};
+use crate::typing::Profile;
 
 #[derive(Serialize, Deserialize)]
 struct StoredKeyEvent {
@@ -16,12 +16,21 @@ struct StoredKeyEvent {
 #[derive(Serialize, Deserialize)]
 struct StoredProfile {
     name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     events: Vec<StoredKeyEvent>,
     bigrams: Vec<(char, char, f64)>,
+    #[serde(default)]
+    bigram_counts: Vec<(char, char, usize)>,
     #[serde(default)]
     char_count: usize,
     #[serde(default)]
     interval_count: usize,
+    #[serde(default)]
+    wpm: f64,
+    #[serde(default)]
+    avg_dwell_ms: f64,
+    #[serde(default)]
+    dwell_count: usize,
 }
 
 fn profiles_path() -> Option<PathBuf> {
@@ -70,54 +79,81 @@ pub fn load() -> Vec<Profile> {
 fn profile_to_stored(p: &Profile) -> StoredProfile {
     StoredProfile {
         name: p.name.clone(),
-        events: p
-            .events
-            .iter()
-            .map(|e| StoredKeyEvent {
-                key: e.key,
-                keycode: e.keycode,
-                press_ms: e.press_ms,
-                release_ms: e.release_ms,
-            })
-            .collect(),
+        events: Vec::new(),
         bigrams: p.bigrams.iter().map(|(&(a, b), &ms)| (a, b, ms)).collect(),
+        bigram_counts: p
+            .bigram_counts
+            .iter()
+            .map(|(&(a, b), &n)| (a, b, n))
+            .collect(),
         char_count: p.char_count,
         interval_count: p.interval_count,
+        wpm: p.wpm,
+        avg_dwell_ms: p.avg_dwell_ms,
+        dwell_count: p.dwell_count,
     }
 }
 
 fn stored_to_profile(s: StoredProfile) -> Profile {
-    let events: Vec<KeyEvent> = s
-        .events
-        .into_iter()
-        .map(|e| KeyEvent {
-            key: e.key,
-            keycode: e.keycode,
-            press_ms: e.press_ms,
-            release_ms: e.release_ms,
-        })
-        .collect();
     let bigrams: HashMap<(char, char), f64> = s
         .bigrams
         .into_iter()
         .map(|(a, b, ms)| ((a, b), ms))
         .collect();
-    // Backfill for profiles saved before these fields existed
+    let bigram_counts: HashMap<(char, char), usize> = s
+        .bigram_counts
+        .into_iter()
+        .map(|(a, b, n)| ((a, b), n))
+        .collect();
     let char_count = if s.char_count > 0 {
         s.char_count
     } else {
-        events.iter().filter(|e| e.key != '\x08').count()
+        s.events.iter().filter(|e| e.key != '\x08').count()
     };
     let interval_count = if s.interval_count > 0 {
         s.interval_count
     } else {
         bigrams.len()
     };
+    let (wpm, avg_dwell_ms, dwell_count) = if s.wpm > 0.0 {
+        (s.wpm, s.avg_dwell_ms, s.dwell_count)
+    } else {
+        let wpm = if s.events.len() < 2 {
+            0.0
+        } else {
+            let elapsed_ms = s
+                .events
+                .last()
+                .unwrap()
+                .press_ms
+                .saturating_sub(s.events[0].press_ms) as f64;
+            if elapsed_ms < 1.0 {
+                0.0
+            } else {
+                (char_count as f64 / 5.0) / (elapsed_ms / 60_000.0)
+            }
+        };
+        let dwells: Vec<f64> = s
+            .events
+            .iter()
+            .filter_map(|e| e.release_ms.map(|r| (r - e.press_ms) as f64))
+            .collect();
+        let dwell_count = dwells.len();
+        let avg_dwell_ms = if dwell_count > 0 {
+            dwells.iter().sum::<f64>() / dwell_count as f64
+        } else {
+            0.0
+        };
+        (wpm, avg_dwell_ms, dwell_count)
+    };
     Profile {
         name: s.name,
-        events,
         bigrams,
+        bigram_counts,
         char_count,
         interval_count,
+        wpm,
+        avg_dwell_ms,
+        dwell_count,
     }
 }
