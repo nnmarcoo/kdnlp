@@ -132,7 +132,7 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
                                 if !ch.is_control() {
                                     let keycode = physical_keycode(physical_key);
                                     shell.publish((self.on_key)(
-                                        ch.to_ascii_lowercase(),
+                                        ch,
                                         keycode,
                                         t,
                                     ));
@@ -248,7 +248,7 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
             }
 
             let color = if i < typed_chars.len() {
-                if typed_chars[i] == ch {
+                if typed_chars[i].eq_ignore_ascii_case(&ch) {
                     color_correct
                 } else {
                     color_wrong
@@ -327,7 +327,7 @@ fn physical_keycode(key: &Physical) -> u32 {
 
 fn key_to_char(key: &Key) -> Option<char> {
     match key {
-        Key::Character(s) => s.chars().next().map(|c| c.to_ascii_lowercase()),
+        Key::Character(s) => s.chars().next(),
         Key::Named(Named::Space) => Some(' '),
         Key::Named(Named::Backspace) => Some('\x08'),
         _ => None,
