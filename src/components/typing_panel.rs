@@ -1,8 +1,9 @@
 use iced::alignment::Vertical;
-use iced::widget::{Space, button, column, container, row, text, text_input};
-use iced::{Color, Element, Length};
+use iced::widget::{Space, button, column, container, pick_list, row, text_input};
+use iced::{Element, Length};
 
 use crate::app::Message;
+use crate::plots::{IdentificationMethod, METHODS};
 use crate::styles;
 use crate::typing::Session;
 use crate::widgets::typing_widget::TypingWidget;
@@ -12,6 +13,7 @@ pub fn view<'a>(
     session: &'a Session,
     profiles_count: usize,
     prompt: &'a str,
+    method: IdentificationMethod,
 ) -> Element<'a, Message> {
     let typing = TypingWidget::new(
         prompt,
@@ -23,7 +25,7 @@ pub fn view<'a>(
         Message::Enroll,
     );
 
-    let controls = view_controls(name_input, session, profiles_count);
+    let controls = view_controls(name_input, session, profiles_count, method);
 
     container(
         column![typing, controls]
@@ -38,6 +40,7 @@ fn view_controls<'a>(
     name_input: &'a str,
     session: &'a Session,
     profiles_count: usize,
+    method: IdentificationMethod,
 ) -> Element<'a, Message> {
     let has_session = !session.is_empty();
     let has_name = !name_input.trim().is_empty();
@@ -69,9 +72,7 @@ fn view_controls<'a>(
         .style(styles::mode_btn)
         .on_press(Message::Clear);
 
-    let intervals = text(format!("{} intervals", session.interval_count()))
-        .size(12)
-        .color(Color::from_rgb(0.45, 0.45, 0.45));
+    let method_picker = pick_list(METHODS, Some(method), Message::MethodChanged);
 
     row![
         name_field,
@@ -79,7 +80,7 @@ fn view_controls<'a>(
         identify_btn,
         clear_btn,
         Space::new().width(Length::Fill),
-        intervals,
+        method_picker,
     ]
     .spacing(styles::SPACING)
     .align_y(Vertical::Center)

@@ -1,17 +1,17 @@
+use iced::alignment::Vertical;
 use iced::widget::{Space, column, container, row, rule, text};
-use iced::{Color, Element, Length};
-use iced_plot::PlotWidget;
+use iced::{Background, Border, Color, Element, Length};
 
 use crate::app::Message;
 use crate::styles;
 use crate::typing::Session;
 use crate::widgets::bar_chart::Heatmap;
 
-pub fn view<'a>(session: &'a Session, id_plot: Option<&'a PlotWidget>) -> Element<'a, Message> {
+pub fn view<'a>(session: &'a Session, id_results: &'a [(String, f64)]) -> Element<'a, Message> {
     row![
         dash_card("Flight Times", flight_times_content(session)),
-        dash_card("Fingerprint Space", fingerprint_content(id_plot)),
-        dash_card("Model Output", placeholder_content("No model loaded yet.")),
+        dash_card("Rankings", rankings_content(id_results)),
+        dash_card("Model Output", model_output_content(id_results)),
     ]
     .spacing(styles::PAD)
     .padding(styles::PAD)
@@ -44,7 +44,7 @@ fn flight_times_content<'a>(session: &'a Session) -> Element<'a, Message> {
 
     let stats = stats_row(session);
 
-    column![stats, Heatmap::from_vecs(&session.bigrams),]
+    column![stats, Heatmap::from_vecs(&session.bigrams)]
         .spacing(6)
         .width(Length::Fill)
         .height(Length::Fill)
@@ -52,18 +52,12 @@ fn flight_times_content<'a>(session: &'a Session) -> Element<'a, Message> {
 }
 
 fn stats_row<'a>(session: &'a Session) -> Element<'a, Message> {
-    let wpm = session.wpm();
-    let avg_iki = session.avg_interval_ms();
-    let avg_dwell = session.avg_dwell_ms();
-    let unique = session.unique_bigram_count();
-    let total = session.interval_count();
-
     row![
-        stat_pill("WPM", &format!("{:.0}", wpm)),
-        stat_pill("avg", &format!("{:.0}ms", avg_iki)),
-        stat_pill("dwell", &format!("{:.0}ms", avg_dwell)),
-        stat_pill("bigrams", &format!("{}", unique)),
-        stat_pill("total", &format!("{}", total)),
+        stat_pill("WPM", &format!("{:.0}", session.wpm())),
+        stat_pill("avg", &format!("{:.0}ms", session.avg_interval_ms())),
+        stat_pill("dwell", &format!("{:.0}ms", session.avg_dwell_ms())),
+        stat_pill("bigrams", &format!("{}", session.unique_bigram_count())),
+        stat_pill("total", &format!("{}", session.interval_count())),
         Space::new().width(Length::Fill),
     ]
     .spacing(8)
@@ -71,20 +65,92 @@ fn stats_row<'a>(session: &'a Session) -> Element<'a, Message> {
 }
 
 fn stat_pill<'a>(label: &'a str, value: &str) -> Element<'a, Message> {
-    let label_el = text(label).size(9).color(dim());
-    let value_el = text(value.to_string())
-        .size(12)
-        .color(Color::from_rgb(0.85, 0.85, 0.85));
-    column![value_el, label_el].spacing(1).into()
+    column![
+        text(value.to_string())
+            .size(12)
+            .color(Color::from_rgb(0.85, 0.85, 0.85)),
+        text(label).size(9).color(dim()),
+    ]
+    .spacing(1)
+    .into()
 }
 
-fn fingerprint_content<'a>(id_plot: Option<&'a PlotWidget>) -> Element<'a, Message> {
-    match id_plot {
-        Some(plot) => plot.view().map(Message::IdPlotMsg),
-        None => placeholder_content(
-            "Run Identify to plot your typing fingerprint against enrolled profiles.",
-        ),
+fn rankings_content<'a>(id_results: &'a [(String, f64)]) -> Element<'a, Message> {
+    if id_results.is_empty() {
+        return placeholder_content("Run Identify to see ranked matches.");
     }
+
+    let max_dist = id_results.last().map(|r| r.1).unwrap_or(1.0).max(1.0);
+
+    let rows: Vec<Element<'_, Message>> = id_results
+        .iter()
+        .enumerate()
+        .map(|(i, (name, dist))| {
+            let t = (dist / max_dist).clamp(0.0, 1.0) as f32;
+            let color = Color::from_rgb(0.38 + 0.54 * t, 0.82 - 0.47 * t, 0.48 - 0.13 * t);
+            let filled = (((1.0 - t) * 90.0 + 5.0) as u16).max(1);
+            let empty = 100u16.saturating_sub(filled);
+
+            let bar = row![
+                container(Space::new())
+                    .style(move |_: &iced::Theme| container::Style {
+                        background: Some(Background::Color(color)),
+                        border: Border {
+                            radius: 3.0.into(),
+                            ..Border::default()
+                        },
+                        ..container::Style::default()
+                    })
+                    .width(Length::FillPortion(filled))
+                    .height(Length::Fixed(6.0)),
+                Space::new().width(Length::FillPortion(empty)),
+            ];
+
+            row![
+                text(format!("{}.", i + 1))
+                    .size(11)
+                    .color(dim())
+                    .width(Length::Fixed(18.0)),
+                text(name.as_str())
+                    .size(12)
+                    .color(Color::from_rgb(0.85, 0.85, 0.85))
+                    .width(Length::Fixed(80.0)),
+                bar,
+                Space::new().width(Length::Fixed(6.0)),
+                text(format!("{:.0}ms", dist)).size(11).color(dim()),
+            ]
+            .align_y(Vertical::Center)
+            .spacing(6)
+            .into()
+        })
+        .collect();
+
+    column(rows)
+        .spacing(10)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+fn model_output_content<'a>(id_results: &'a [(String, f64)]) -> Element<'a, Message> {
+    if id_results.is_empty() {
+        return placeholder_content("Run Identify to see the best match.");
+    }
+
+    let (name, dist) = &id_results[0];
+
+    column![
+        text(name.as_str())
+            .size(28)
+            .color(Color::from_rgb(0.90, 0.90, 0.90)),
+        text(format!("{:.0}ms avg distance", dist))
+            .size(11)
+            .color(dim()),
+    ]
+    .spacing(4)
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
 }
 
 fn placeholder_content<'a>(msg: &'static str) -> Element<'a, Message> {

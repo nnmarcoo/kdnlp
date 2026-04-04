@@ -2,14 +2,14 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 pub const PROMPTS: &[&str] = &[
-    "she started singing along softly with the radio i hope everything worked out okay with your rent in the end we chose to keep our traditional method there were frequent electricity and water shortages",
-    "how would you explain the difference between the two one would have thought id have this down pat by now i dont think we need to make a big deal of this i will follow up with him as soon as the dust settles",
-    "the important thing is to keep your feet on the ground i met my neighbors in the park across the street tonight i just want to make sure were both on the same schedule",
-    "he said he had been surprised to see his name on the list please let me know if there is any way that i can help you john is out today but will be back in the office tomorrow",
-    "it should save the taxpayers a considerable amount of money treatment options consist of rest an injection or surgery later works dealt with ethical concerns in the modern world the law enforcement has responsibility for the safety of the public",
-    "i called my husband at work today just to tell him i loved him let me consult my partner and get back with you in the morning this time im more comfortable and aware of a lot more situations",
-    "it was the best dinner table conversation weve had in a long time then we lit our candles and just stood there silently holding them for safety reasons the turkey will be carved in a private ceremony",
-    "but there have been so many changes in plans that im not surprised let me know if you do not hear from them in the next couple of days i have a touch of food poisoning this morning but i may be in later",
+    "the sun was setting over the hills and the sky turned a deep shade of orange she walked along the narrow path by the river and listened to the water moving over the smooth stones below",
+    "he got up early and made himself a strong cup of coffee then sat at the kitchen table and read through the news before heading out for his morning walk around the quiet neighborhood streets",
+    "she spent the afternoon in the kitchen making a large pot of soup from scratch chopping vegetables and letting everything simmer slowly on the stove until the whole house smelled wonderful",
+    "they had been friends for years and could talk for hours about anything sitting on the front porch watching the cars go by and laughing at old stories that never seemed to get any less funny",
+    "the meeting had gone on longer than expected and everyone was tired by the time they finally reached an agreement the team gathered their notes and headed back to their desks to follow up on the next steps",
+    "the rain had been falling since early morning and showed no sign of stopping the streets were wet and quiet with only a few people out walking quickly under their umbrellas toward the nearest shelter",
+    "they left the city before dawn and drove through the countryside as the sun came up stopping once at a small roadside cafe for breakfast before continuing on toward the coast where they planned to spend the week",
+    "after dinner they cleared the table and sat together in the living room with the lights turned low talking about nothing in particular until one by one they drifted off to bed and the house went quiet",
 ];
 
 pub fn random_prompt() -> &'static str {

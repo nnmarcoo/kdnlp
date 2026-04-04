@@ -1,11 +1,10 @@
 use iced::keyboard::{self, Key};
 use iced::widget::{column, rule};
 use iced::{Element, Subscription, Task, Theme, window};
-use iced_plot::{PlotUiMessage, PlotWidget};
 use std::time::Instant;
 
 use crate::components;
-use crate::plots;
+use crate::plots::{self, IdentificationMethod};
 use crate::store;
 use crate::typing::{Profile, Session, random_prompt};
 
@@ -23,7 +22,8 @@ pub struct App {
     pub session: Session,
     pub profiles: Vec<Profile>,
     pub current_prompt: &'static str,
-    pub id_plot: Option<PlotWidget>,
+    pub id_results: Vec<(String, f64)>,
+    pub method: IdentificationMethod,
 }
 
 impl Default for App {
@@ -36,7 +36,8 @@ impl Default for App {
             session: Session::default(),
             profiles: store::load(),
             current_prompt: random_prompt(),
-            id_plot: None,
+            id_results: Vec::new(),
+            method: IdentificationMethod::FlightTime,
         }
     }
 }
@@ -53,12 +54,12 @@ pub enum Message {
     BackspaceReleased(Instant),
     Enroll,
     Identify,
+    MethodChanged(IdentificationMethod),
     Clear,
     ScaleUp,
     ScaleDown,
     ScaleReset,
     Noop,
-    IdPlotMsg(PlotUiMessage),
 }
 
 impl App {
@@ -161,28 +162,24 @@ impl App {
                 self.session.clear();
                 self.current_prompt = random_prompt();
             }
+            Message::MethodChanged(method) => {
+                self.method = method;
+            }
             Message::Identify => {
                 if self.profiles.is_empty() || self.session.is_empty() {
                     return Task::none();
                 }
-                self.id_plot = plots::build_id_plot(&self.session, &self.profiles);
-                self.session.clear();
-                self.current_prompt = random_prompt();
+                self.id_results = plots::rank_profiles(self.method, &self.session, &self.profiles);
             }
             Message::Clear => {
                 self.session.clear();
-                self.id_plot = None;
+                self.id_results.clear();
                 self.current_prompt = random_prompt();
             }
             Message::ScaleUp => self.scale = (self.scale + 0.1).min(3.0),
             Message::ScaleDown => self.scale = (self.scale - 0.1).max(0.5),
             Message::ScaleReset => self.scale = 1.0,
             Message::Noop => {}
-            Message::IdPlotMsg(msg) => {
-                if let Some(plot) = &mut self.id_plot {
-                    plot.update(msg);
-                }
-            }
         }
         Task::none()
     }
@@ -223,9 +220,10 @@ impl App {
                 &self.session,
                 self.profiles.len(),
                 self.current_prompt,
+                self.method,
             ),
             rule::horizontal(1),
-            components::info_panel::view(&self.session, self.id_plot.as_ref()),
+            components::info_panel::view(&self.session, &self.id_results),
         ]
         .into()
     }

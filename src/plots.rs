@@ -1,48 +1,40 @@
 use std::collections::{HashMap, HashSet};
-
-use iced::Color;
-use iced_plot::{PlotWidget, Series};
+use std::fmt;
 
 use crate::typing::{Profile, Session};
 
-pub fn build_id_plot(session: &Session, profiles: &[Profile]) -> Option<PlotWidget> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentificationMethod {
+    FlightTime,
+}
+
+impl fmt::Display for IdentificationMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IdentificationMethod::FlightTime => write!(f, "Flight Time"),
+        }
+    }
+}
+
+pub const METHODS: &[IdentificationMethod] = &[IdentificationMethod::FlightTime];
+
+pub fn rank_profiles(
+    method: IdentificationMethod,
+    session: &Session,
+    profiles: &[Profile],
+) -> Vec<(String, f64)> {
+    match method {
+        IdentificationMethod::FlightTime => flight_time_rank(session, profiles),
+    }
+}
+
+fn flight_time_rank(session: &Session, profiles: &[Profile]) -> Vec<(String, f64)> {
     if profiles.is_empty() {
-        return None;
+        return Vec::new();
     }
 
     let session_avg = session.averaged();
-
-    let all_bigrams: HashSet<(char, char)> = profiles
-        .iter()
-        .flat_map(|p| p.bigrams.keys().copied())
-        .collect();
-
-    if all_bigrams.len() < 2 {
-        return None;
-    }
-
-    let mut variances: Vec<((char, char), f64)> = all_bigrams
-        .iter()
-        .map(|&bg| {
-            let vals: Vec<f64> = profiles
-                .iter()
-                .filter_map(|p| p.bigrams.get(&bg).copied())
-                .collect();
-            let var = if vals.len() < 2 {
-                0.0
-            } else {
-                let mean = vals.iter().sum::<f64>() / vals.len() as f64;
-                vals.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / vals.len() as f64
-            };
-            (bg, var)
-        })
-        .collect();
-    variances.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    let ax = variances[0].0;
-    let ay = variances[1].0;
-
-    let global_mean: f64 = {
+    let global_mean = {
         let all: Vec<f64> = profiles
             .iter()
             .flat_map(|p| p.bigrams.values().copied())
@@ -54,49 +46,17 @@ pub fn build_id_plot(session: &Session, profiles: &[Profile]) -> Option<PlotWidg
         }
     };
 
-    let session_x = session_avg.get(&ax).copied().unwrap_or(global_mean);
-    let session_y = session_avg.get(&ay).copied().unwrap_or(global_mean);
-
-    let distances: Vec<f64> = profiles
-        .iter()
-        .map(|p| bigram_rms(&session_avg, &p.bigrams, global_mean))
-        .collect();
-    let max_dist = distances.iter().cloned().fold(0.0_f64, f64::max).max(1.0);
-
-    let profile_positions: Vec<[f64; 2]> = profiles
+    let mut ranked: Vec<(String, f64)> = profiles
         .iter()
         .map(|p| {
-            [
-                p.bigrams.get(&ax).copied().unwrap_or(global_mean),
-                p.bigrams.get(&ay).copied().unwrap_or(global_mean),
-            ]
+            (
+                p.name.clone(),
+                bigram_rms(&session_avg, &p.bigrams, global_mean),
+            )
         })
         .collect();
-
-    let profile_colors: Vec<Color> = distances
-        .iter()
-        .map(|&d| {
-            let t = (d / max_dist).clamp(0.0, 1.0) as f32;
-            Color::from_rgb(0.38 + 0.54 * t, 0.82 - 0.47 * t, 0.48 - 0.13 * t)
-        })
-        .collect();
-
-    let mut plot = PlotWidget::new();
-    plot.set_x_axis_label(format!("{}{} ms", ax.0, ax.1));
-    plot.set_y_axis_label(format!("{}{} ms", ay.0, ay.1));
-
-    let _ = plot.add_series(
-        Series::circles(profile_positions, 8.0)
-            .with_label("profiles")
-            .with_point_colors(profile_colors),
-    );
-    let _ = plot.add_series(
-        Series::stars(vec![[session_x, session_y]], 14.0)
-            .with_label("you")
-            .with_color(Color::WHITE),
-    );
-
-    Some(plot)
+    ranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    ranked
 }
 
 fn bigram_rms(
