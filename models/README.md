@@ -3,7 +3,7 @@
 ## Setup
 
 ```bash
-cd python
+cd models
 python -m venv ../.venv
 source ../.venv/bin/activate
 pip install -r requirements.txt
