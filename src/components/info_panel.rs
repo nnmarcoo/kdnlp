@@ -3,15 +3,22 @@ use iced::widget::{Space, column, container, row, rule, text};
 use iced::{Background, Border, Color, Element, Length};
 
 use crate::app::Message;
+use crate::pca;
 use crate::styles;
-use crate::typing::Session;
+use crate::typing::{Profile, Session};
 use crate::widgets::bar_chart::Heatmap;
+use crate::widgets::scatter::ScatterPlot;
 
-pub fn view<'a>(session: &'a Session, id_results: &'a [(String, f64)]) -> Element<'a, Message> {
+pub fn view<'a>(
+    session: &'a Session,
+    profiles: &'a [Profile],
+    id_results: &'a [(String, f64)],
+) -> Element<'a, Message> {
     row![
         dash_card("Flight Times", flight_times_content(session)),
         dash_card("Rankings", rankings_content(id_results)),
         dash_card("Model Output", model_output_content(id_results)),
+        dash_card("Fingerprint Space", fingerprint_space_content(session, profiles)),
     ]
     .spacing(styles::PAD)
     .padding(styles::PAD)
@@ -80,7 +87,11 @@ fn rankings_content<'a>(id_results: &'a [(String, f64)]) -> Element<'a, Message>
         return placeholder_content("Run Identify to see ranked matches.");
     }
 
-    let max_dist = id_results.last().map(|r| r.1).unwrap_or(1.0).max(1.0);
+    let max_dist = id_results
+        .last()
+        .map(|r| r.1)
+        .unwrap_or(1.0)
+        .max(1.0);
 
     let rows: Vec<Element<'_, Message>> = id_results
         .iter()
@@ -151,6 +162,47 @@ fn model_output_content<'a>(id_results: &'a [(String, f64)]) -> Element<'a, Mess
     .width(Length::Fill)
     .height(Length::Fill)
     .into()
+}
+
+fn fingerprint_space_content<'a>(
+    session: &'a Session,
+    profiles: &'a [Profile],
+) -> Element<'a, Message> {
+    if profiles.len() < 2 {
+        return placeholder_content("Enroll 2+ profiles to see the projection.");
+    }
+    if session.is_empty() {
+        return placeholder_content("Start typing to see where you land.");
+    }
+
+    let global_mean = {
+        let all: Vec<f64> = profiles
+            .iter()
+            .flat_map(|p| p.bigrams.values().copied())
+            .collect();
+        if all.is_empty() {
+            200.0
+        } else {
+            all.iter().sum::<f64>() / all.len() as f64
+        }
+    };
+
+    let profile_vecs: Vec<(String, std::collections::HashMap<(char, char), f64>)> = profiles
+        .iter()
+        .map(|p| (p.name.clone(), p.bigrams.clone()))
+        .collect();
+
+    let session_avg = session.averaged();
+    let session_input = if session.is_empty() {
+        None
+    } else {
+        Some(&session_avg)
+    };
+
+    let (projected, session_pt) =
+        pca::project_profiles(&profile_vecs, session_input, global_mean);
+
+    ScatterPlot::new(projected, session_pt).into()
 }
 
 fn placeholder_content<'a>(msg: &'static str) -> Element<'a, Message> {

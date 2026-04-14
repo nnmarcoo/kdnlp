@@ -1,5 +1,6 @@
 mod app;
 mod components;
+mod pca;
 mod plots;
 mod store;
 mod styles;

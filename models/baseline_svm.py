@@ -1,85 +1,57 @@
+# Baseline: multi-class SVM over top-50 bigram timing features.
+#
+# Each session becomes a fixed-length feature vector: for each of the 50
+# most frequent bigrams in the training pool, we append the mean IKI, dwell,
+# and flight time observed in that session (150 dimensions total). Bigrams
+# that didn't appear in a session are imputed with the training population
+# mean so they contribute zero signal after standardization, rather than
+# pulling toward an artificial extreme. We then fit a one-vs-one RBF SVM
+# and report rank-1 identification accuracy on the held-out test sessions.
+#
+# Why this underperforms baseline_nn.py:
+#   The SVM treats every training session as an independent sample, so it
+#   sees only ~2-4 examples per class (one per training session per user).
+#   With 500 classes and so few samples each, the decision boundaries are
+#   poorly constrained. The NN baseline sidesteps this by aggregating all
+#   training sessions into a single rich enrollment profile per user before
+#   comparing — more signal, less noise, no boundary-learning required.
+#   The SVM also struggles with short test sessions: a session covering only
+#   ~30 of the 50 bigrams leaves 20 features imputed to the mean, diluting
+#   the discriminative signal the SVM was trained on.
+
 import argparse
 import random
-from collections import defaultdict
 
 import numpy as np
 import pandas as pd
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
 
-# The three timing features we care about for each bigram
+N_BIGRAMS = 50
 TIMING_COLS = ["iki_ms", "dwell_ms", "flight_ms"]
 
 
-# Build a typing profile for one user: for each bigram they typed,
-# average out the timing features and note how many times they typed it.
-def build_profile(df):
-    profile = {}
-    for bg, bdf in df.groupby("bigram"):
-        profile[bg] = {col: bdf[col].mean() for col in TIMING_COLS}
-        profile[bg]["n"] = len(bdf)
-    return profile
-
-
-# For each bigram, collect the mean and std of each timing feature across
-# all users. We need this so we can z-normalize later.
-#
-# Different bigrams have different raw timings - something like "th" is fast
-# for everyone (~80ms), while "qz" is slow for everyone (~300ms). Without
-# normalization, slow bigrams would dominate the distance calculation even
-# though a 20ms difference is equally meaningful on both. Z-normalizing
-# puts every bigram on the same scale.
-def compute_bigram_stats(profiles):
-    # First pass: gather each user's average for every bigram into lists
-    vals = defaultdict(lambda: {col: [] for col in TIMING_COLS})
-    for profile in profiles.values():
-        for bg, feats in profile.items():
-            for col in TIMING_COLS:
-                vals[bg][col].append(feats[col])
-
-    # Second pass: turn those lists into (mean, std) pairs
-    stats = {}
-    for bg, col_vals in vals.items():
-        stats[bg] = {}
-        for col in TIMING_COLS:
-            v = col_vals[col]
-            std = np.std(v)
-            # If std is 0 (everyone typed it the same), use 1 to avoid dividing by zero
-            stats[bg][col] = (np.mean(v), std if std > 0 else 1.0)
-    return stats
-
-
-# Apply z-normalization: for each bigram timing value, subtract the population
-# mean and divide by the population std. The result tells you how far this
-# user's timing is from the average, measured in standard deviations.
-# Example: a value of +1.5 means this user is 1.5 std devs slower than average
-# for that bigram. A value of -0.8 means they're 0.8 std devs faster.
-def normalize_profile(profile, stats):
-    normed = {}
-    for bg, feats in profile.items():
-        if bg not in stats:
-            continue
-        normed[bg] = {"n": feats["n"]}
-        for col in TIMING_COLS:
-            mean, std = stats[bg][col]
-            normed[bg][col] = (feats[col] - mean) / std
-    return normed
-
-
-# Compare two profiles using weighted Euclidean distance over shared bigrams.
-# Bigrams with more observations get higher weight (more reliable signal).
-# Lower score = more similar typing style.
-def compare_profiles(enrolled, test):
-    shared = enrolled.keys() & test.keys()
-    if not shared:
-        return np.inf
-
-    total_w, total_d = 0.0, 0.0
-    for bg in shared:
-        w = min(enrolled[bg]["n"], test[bg]["n"])
-        for col in TIMING_COLS:
-            total_d += w * (enrolled[bg][col] - test[bg][col]) ** 2
-        total_w += w
-
-    return total_d / total_w if total_w > 0 else np.inf
+# One feature vector per (participant, session).
+# For each of the top N bigrams, append mean IKI, dwell, and flight.
+# Bigrams absent from the session are left as NaN so the imputer can
+# fill them with the population mean (rather than zero, which after
+# standardization reads as "unusually fast" rather than "no data").
+def vectorize(df, top_bigrams):
+    bg_set = set(top_bigrams)
+    rows, labels = [], []
+    for (pid, sid), sdf in df.groupby(["participant_id", "session_id"]):
+        present = sdf[sdf["bigram"].isin(bg_set)].groupby("bigram")[TIMING_COLS].mean()
+        vec = []
+        for bg in top_bigrams:
+            if bg in present.index:
+                vec.extend(present.loc[bg, TIMING_COLS].tolist())
+            else:
+                # NaN so SimpleImputer can fill with training population mean
+                vec.extend([np.nan] * len(TIMING_COLS))
+        rows.append(vec)
+        labels.append(pid)
+    return np.array(rows, dtype=float), labels
 
 
 def run(data_dir, n_users_list, seed=42):
@@ -90,75 +62,54 @@ def run(data_dir, n_users_list, seed=42):
     train_df = pd.read_csv(f"{data_dir}/train.csv")
     test_df = pd.read_csv(f"{data_dir}/test.csv")
 
-    # Randomly sample a pool of participants up to the largest group size
-    # we'll test. This way smaller subsets are always strict subsets of larger ones.
+    # Sample a pool up to the largest group size we'll test so that
+    # smaller subsets are always strict subsets of larger ones.
     all_pids = sorted(train_df["participant_id"].unique())
     max_users = max(n_users_list)
     pool = sorted(random.sample(list(all_pids), min(max_users, len(all_pids))))
-
-    train_df = train_df[train_df["participant_id"].isin(pool)]
-    test_df = test_df[test_df["participant_id"].isin(pool)]
     print(f"Pool: {len(pool)} participants")
-    print(f"Train bigrams: {len(train_df)}, Test bigrams: {len(test_df)}")
 
-    # Create one typing profile per user from their training sessions
-    print("Building per-user profiles...")
-    profiles = {}
-    for pid, udf in train_df.groupby("participant_id"):
-        profiles[pid] = build_profile(udf)
+    # Select top N bigrams by total occurrence across the full training pool.
+    # Using corpus-wide frequency ensures the chosen bigrams are well-covered
+    # for most users, minimising imputed (missing) values in the feature vectors.
+    pool_train = train_df[train_df["participant_id"].isin(pool)]
+    top_bigrams = pool_train["bigram"].value_counts().head(N_BIGRAMS).index.tolist()
+    print(f"Top {N_BIGRAMS} bigrams: {top_bigrams[0]!r} ... {top_bigrams[-1]!r}")
 
-    # Figure out the population mean/std for each bigram, then normalize
-    # every user's profile. After this, we're comparing typing patterns
-    # (who is relatively faster or slower on which bigrams) instead of
-    # raw millisecond values that would be dominated by overall typing speed.
-    print("Z-normalizing per bigram across users...")
-    stats = compute_bigram_stats(profiles)
-    norm_profiles = {pid: normalize_profile(p, stats) for pid, p in profiles.items()}
-
-    # Build one test sample per (participant, session) - each is a mini-profile
-    # from a session the model hasn't seen during enrollment
-    print("Building test samples...")
-    test_samples = []
-    for (pid, sid), sdf in test_df.groupby(["participant_id", "session_id"]):
-        tp = build_profile(sdf)
-        if tp:
-            test_samples.append((pid, normalize_profile(tp, stats)))
-
-    avg_profile = np.mean([len(p) for p in profiles.values()])
-    avg_test = np.mean([len(tp) for _, tp in test_samples])
-    print(f"Profiles: {len(profiles)}, Test samples: {len(test_samples)}")
-    print(f"Avg bigrams per profile: {avg_profile:.0f}, per test: {avg_test:.0f}")
-
-    # Evaluate at each group size: for every test sample, rank all enrolled
-    # users by distance and check if the true user lands in rank 1 or top 5.
-    # "Random" column shows the chance baseline (1/n_users).
-    print("\n" + "=" * 60)
-    print(f"{'n_users':>8} {'Rank-1':>10} {'Top-5':>10} {'Random':>10}")
-    print("=" * 60)
+    print("\n" + "=" * 50)
+    print(f"{'n_users':>8} {'Rank-1':>10} {'Random':>10}")
+    print("=" * 50)
 
     for n_users in sorted(n_users_list):
         subset = set(pool[:n_users])
-        sub_profiles = {p: norm_profiles[p] for p in subset if p in norm_profiles}
-        sub_tests = [(p, tp) for p, tp in test_samples if p in sub_profiles]
 
-        correct_1 = correct_5 = 0
-        for true_pid, test_profile in sub_tests:
-            # Rank all enrolled users by how closely they match this test sample
-            ranked = sorted(
-                ((compare_profiles(ep, test_profile), pid)
-                 for pid, ep in sub_profiles.items()),
-            )
-            if ranked[0][1] == true_pid:
-                correct_1 += 1
-            if true_pid in {pid for _, pid in ranked[:5]}:
-                correct_5 += 1
+        X_train, y_train = vectorize(
+            train_df[train_df["participant_id"].isin(subset)], top_bigrams
+        )
+        X_test, y_test = vectorize(
+            test_df[test_df["participant_id"].isin(subset)], top_bigrams
+        )
 
-        n = len(sub_tests)
-        print(f"{n_users:>8} {correct_1 / n:>9.1%} {correct_5 / n:>9.1%} "
-              f"{1 / n_users:>9.1%}")
+        # Fill missing bigrams with the training population mean so that
+        # absent bigrams contribute zero signal after standardization.
+        # Fit only on training data to avoid test leakage.
+        imputer = SimpleImputer(strategy="mean")
+        X_train = imputer.fit_transform(X_train)
+        X_test = imputer.transform(X_test)
 
-    print("=" * 60)
-    print(f"Test samples evaluated: {len(test_samples)}")
+        # Z-normalize each feature so that slow bigrams (high absolute ms)
+        # don't dominate the SVM kernel over fast bigrams.
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
+
+        clf = SVC(kernel="rbf", random_state=seed)
+        clf.fit(X_train, y_train)
+        acc = clf.score(X_test, y_test)
+
+        print(f"{n_users:>8} {acc:>9.1%} {1 / n_users:>9.1%}")
+
+    print("=" * 50)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ pub fn view<'a>(
     profiles_count: usize,
     prompt: &'a str,
     method: IdentificationMethod,
+    fixed_prompt: bool,
 ) -> Element<'a, Message> {
     let typing = TypingWidget::new(
         prompt,
@@ -25,7 +26,7 @@ pub fn view<'a>(
         Message::Enroll,
     );
 
-    let controls = view_controls(name_input, session, profiles_count, method);
+    let controls = view_controls(name_input, session, profiles_count, method, fixed_prompt);
 
     container(
         column![typing, controls]
@@ -41,6 +42,7 @@ fn view_controls<'a>(
     session: &'a Session,
     profiles_count: usize,
     method: IdentificationMethod,
+    fixed_prompt: bool,
 ) -> Element<'a, Message> {
     let has_session = !session.is_empty();
     let has_name = !name_input.trim().is_empty();
@@ -72,6 +74,12 @@ fn view_controls<'a>(
         .style(styles::mode_btn)
         .on_press(Message::Clear);
 
+    let fixed_btn = if fixed_prompt {
+        button("fixed prompt").style(styles::mode_btn_active).on_press(Message::ToggleFixedPrompt)
+    } else {
+        button("fixed prompt").style(styles::mode_btn).on_press(Message::ToggleFixedPrompt)
+    };
+
     let method_picker = pick_list(METHODS, Some(method), Message::MethodChanged);
 
     row![
@@ -80,6 +88,7 @@ fn view_controls<'a>(
         identify_btn,
         clear_btn,
         Space::new().width(Length::Fill),
+        fixed_btn,
         method_picker,
     ]
     .spacing(styles::SPACING)

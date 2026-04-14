@@ -24,6 +24,7 @@ pub struct App {
     pub current_prompt: &'static str,
     pub id_results: Vec<(String, f64)>,
     pub method: IdentificationMethod,
+    pub fixed_prompt: bool,
 }
 
 impl Default for App {
@@ -38,6 +39,7 @@ impl Default for App {
             current_prompt: random_prompt(),
             id_results: Vec::new(),
             method: IdentificationMethod::FlightTime,
+            fixed_prompt: false,
         }
     }
 }
@@ -56,6 +58,7 @@ pub enum Message {
     Identify,
     MethodChanged(IdentificationMethod),
     Clear,
+    ToggleFixedPrompt,
     ScaleUp,
     ScaleDown,
     ScaleReset,
@@ -160,7 +163,7 @@ impl App {
                 store::save(&self.profiles);
                 self.name_input.clear();
                 self.session.clear();
-                self.current_prompt = random_prompt();
+                self.current_prompt = self.next_prompt();
             }
             Message::MethodChanged(method) => {
                 self.method = method;
@@ -174,7 +177,11 @@ impl App {
             Message::Clear => {
                 self.session.clear();
                 self.id_results.clear();
-                self.current_prompt = random_prompt();
+                self.current_prompt = self.next_prompt();
+            }
+            Message::ToggleFixedPrompt => {
+                self.fixed_prompt = !self.fixed_prompt;
+                self.current_prompt = self.next_prompt();
             }
             Message::ScaleUp => self.scale = (self.scale + 0.1).min(3.0),
             Message::ScaleDown => self.scale = (self.scale - 0.1).max(0.5),
@@ -221,11 +228,20 @@ impl App {
                 self.profiles.len(),
                 self.current_prompt,
                 self.method,
+                self.fixed_prompt,
             ),
             rule::horizontal(1),
-            components::info_panel::view(&self.session, &self.id_results),
+            components::info_panel::view(&self.session, &self.profiles, &self.id_results),
         ]
         .into()
+    }
+
+    fn next_prompt(&self) -> &'static str {
+        if self.fixed_prompt {
+            crate::typing::PROMPTS[0]
+        } else {
+            random_prompt()
+        }
     }
 
     pub fn theme(&self) -> Theme {
