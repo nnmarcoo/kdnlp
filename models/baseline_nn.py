@@ -4,7 +4,7 @@
 # training sessions: for every bigram they typed we store the mean IKI, dwell,
 # and flight time along with the observation count. At test time each held-out
 # session is compared against every enrolled user's profile using a weighted
-# Euclidean distance (more observations → higher weight), and the closest user
+# mean squared difference (more observations -> higher weight), and the closest user
 # is returned as the prediction. We report rank-1 and top-5 accuracy.
 #
 # Why this outperforms baseline_svm.py:
@@ -41,7 +41,7 @@ def build_profile(df):
 # For each bigram, collect the mean and std of each timing feature across
 # all users. We need this so we can z-normalize later.
 #
-# Different bigrams have different raw timings — "th" is fast for everyone
+# Different bigrams have different raw timings - "th" is fast for everyone
 # (~80ms) while "qz" is slow for everyone (~300ms). Without normalization,
 # slow bigrams dominate the distance calculation even though a 20ms difference
 # is equally meaningful on both. Z-normalizing puts every bigram on the same
@@ -68,7 +68,7 @@ def compute_bigram_stats(profiles):
 
 # Z-normalize a profile: for each bigram timing subtract the population mean
 # and divide by population std. The result is how many standard deviations
-# this user's timing differs from average for that bigram — positive means
+# this user's timing differs from average for that bigram - positive means
 # slower, negative means faster.
 def normalize_profile(profile, stats):
     normed = {}
@@ -82,7 +82,7 @@ def normalize_profile(profile, stats):
     return normed
 
 
-# Weighted Euclidean distance between an enrolled profile and a test profile,
+# Weighted mean squared difference between an enrolled profile and a test profile,
 # computed only over bigrams that appear in both. Weighting by the minimum
 # observation count means that bigrams seen many times (reliable signal) count
 # more than bigrams seen once or twice (noisy). Lower score = more similar.

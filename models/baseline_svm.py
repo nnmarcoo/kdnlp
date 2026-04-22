@@ -14,7 +14,7 @@
 #   With 500 classes and so few samples each, the decision boundaries are
 #   poorly constrained. The NN baseline sidesteps this by aggregating all
 #   training sessions into a single rich enrollment profile per user before
-#   comparing — more signal, less noise, no boundary-learning required.
+#   comparing - more signal, less noise, no boundary-learning required.
 #   The SVM also struggles with short test sessions: a session covering only
 #   ~30 of the 50 bigrams leaves 20 features imputed to the mean, diluting
 #   the discriminative signal the SVM was trained on.

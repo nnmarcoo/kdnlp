@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 
-# Same timing features as the baseline
+# Same timing features as the baseline plus physical key distance
 TIMING_COLS = ["iki_ms", "dwell_ms", "flight_ms", "key_dist"]
 
 
@@ -75,8 +75,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
 
 
 # Run the model on test data without updating weights.
-# Compute rank-1 accuracy (top prediction is correct) and
-# rank-5 accuracy (correct user is in the top 5 predictions).
+# Compute rank-1 accuracy (top prediction is correct).
 def evaluate(model, loader, device):
     pass
 
@@ -111,8 +110,8 @@ def run(data_dir, n_users, seed=42, epochs=20, batch_size=64,
         # TODO: train_one_epoch, then evaluate, print progress
         pass
 
-    # Final evaluation at different user pool sizes (like the baseline does)
-    # TODO: report rank-1 and rank-5 accuracy
+    # Final evaluation
+    # TODO: report rank-1 accuracy
 
 
 if __name__ == "__main__":
