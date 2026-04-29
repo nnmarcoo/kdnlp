@@ -33,3 +33,16 @@ Options:
 - `--n_users 50 100 250 500` — pool sizes to evaluate
 - `--seed 42` — random seed for reproducibility
 - `--data_dir ./processed` — path to preprocessed CSVs
+
+## LSTM
+
+```bash
+python lstm.py
+```
+Options (defaults):
+- `--n_users 500` — pool sizes to evaluate
+- `--seed 42` — random seed for reproducibility
+- `--data_dir ./processed` — path to preprocessed CSVs
+- `--epochs 20` - number of training loops
+- `--batch_size 64` - number of sequences processed at once
+- `--lr 1e-3` - learning rate for the optimizer
