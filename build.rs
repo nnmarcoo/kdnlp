@@ -8,19 +8,28 @@ fn main() {
 
     // Copy ORT library for the current platform
     #[cfg(target_os = "windows")]
-    copy("lib/windows-x64/onnxruntime.dll", &target_dir.join("onnxruntime.dll"));
+    copy(
+        "lib/windows-x64/onnxruntime.dll",
+        &target_dir.join("onnxruntime.dll"),
+    );
 
     #[cfg(target_os = "linux")]
-    copy("lib/linux-x64/libonnxruntime.so", &target_dir.join("libonnxruntime.so"));
+    copy(
+        "lib/linux-x64/libonnxruntime.so",
+        &target_dir.join("libonnxruntime.so"),
+    );
 
     #[cfg(target_os = "macos")]
-    copy("lib/macos-arm64/libonnxruntime.dylib", &target_dir.join("libonnxruntime.dylib"));
+    copy(
+        "lib/macos-arm64/libonnxruntime.dylib",
+        &target_dir.join("libonnxruntime.dylib"),
+    );
 
     // Copy model files next to the exe
     let model_out = target_dir.join("model");
     std::fs::create_dir_all(&model_out).unwrap();
-    copy("model/embedder.onnx",    &model_out.join("embedder.onnx"));
-    copy("model/norm_stats.json",  &model_out.join("norm_stats.json"));
+    copy("model/embedder.onnx", &model_out.join("embedder.onnx"));
+    copy("model/norm_stats.json", &model_out.join("norm_stats.json"));
 }
 
 fn copy(src: &str, dst: &PathBuf) {

@@ -127,18 +127,13 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
                         shell.capture_event();
                     }
                     _ => {
-                        if let Some(s) = text.as_ref() {
-                            if let Some(ch) = s.chars().next() {
-                                if !ch.is_control() {
-                                    let keycode = physical_keycode(physical_key);
-                                    shell.publish((self.on_key)(
-                                        ch.to_ascii_lowercase(),
-                                        keycode,
-                                        t,
-                                    ));
-                                    shell.capture_event();
-                                }
-                            }
+                        if let Some(s) = text.as_ref()
+                            && let Some(ch) = s.chars().next()
+                            && !ch.is_control()
+                        {
+                            let keycode = physical_keycode(physical_key);
+                            shell.publish((self.on_key)(ch.to_ascii_lowercase(), keycode, t));
+                            shell.capture_event();
                         }
                     }
                 }
@@ -204,7 +199,7 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
                 line_height: text::LineHeight::default(),
                 font: Font::MONOSPACE,
                 align_x: iced::alignment::Horizontal::Left.into(),
-                align_y: iced::alignment::Vertical::Top.into(),
+                align_y: iced::alignment::Vertical::Top,
                 shaping: text::Shaping::Basic,
                 wrapping: text::Wrapping::None,
             });
@@ -275,7 +270,7 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
                     line_height: text::LineHeight::default(),
                     font: Font::MONOSPACE,
                     align_x: iced::alignment::Horizontal::Left.into(),
-                    align_y: iced::alignment::Vertical::Center.into(),
+                    align_y: iced::alignment::Vertical::Center,
                     shaping: text::Shaping::Basic,
                     wrapping: text::Wrapping::None,
                 },
@@ -285,12 +280,11 @@ impl<'a, Message: Clone> Widget<Message, iced::Theme, Renderer> for TypingWidget
             );
         }
 
-        if typed_chars.len() >= passage_chars.len() {
-            if let Some(last) = positions.last() {
-                if state.focused {
-                    draw_cursor(renderer, last.x + char_w, last.y);
-                }
-            }
+        if typed_chars.len() >= passage_chars.len()
+            && let Some(last) = positions.last()
+            && state.focused
+        {
+            draw_cursor(renderer, last.x + char_w, last.y);
         }
     }
 

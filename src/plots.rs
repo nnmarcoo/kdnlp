@@ -13,7 +13,9 @@ fn neural_rank(session: &Session, profiles: &[Profile]) -> Vec<(String, f64)> {
     let mut ranked: Vec<(String, f64)> = profiles
         .iter()
         .map(|p| {
-            let score = p.embedding.as_ref()
+            let score = p
+                .embedding
+                .as_ref()
                 .map(|e| embedder::cosine_sim(&query_emb, e) as f64)
                 .unwrap_or(0.0);
             (p.name.clone(), score)
@@ -23,4 +25,3 @@ fn neural_rank(session: &Session, profiles: &[Profile]) -> Vec<(String, f64)> {
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     ranked
 }
-

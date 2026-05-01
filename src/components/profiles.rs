@@ -1,6 +1,5 @@
 use iced::alignment::Vertical;
-use iced::widget::scrollable::{Direction, Scrollbar};
-use iced::widget::{Space, button, column, container, row, scrollable, text};
+use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Color, Element, Length};
 
 use crate::app::Message;
@@ -8,8 +7,13 @@ use crate::styles;
 use crate::typing::Profile;
 use crate::widgets::bar_chart::Heatmap;
 
-pub fn view<'a>(profiles: &'a [Profile]) -> Element<'a, Message> {
-    if profiles.is_empty() {
+pub fn view<'a>(
+    profiles: &'a [Profile],
+    demo_profiles: &'a [Profile],
+    search: &'a str,
+) -> Element<'a, Message> {
+    let total = profiles.len() + demo_profiles.len();
+    if total == 0 {
         return container(
             text("No profiles enrolled yet. Type on the Demo page and press Enroll.")
                 .size(12)
@@ -21,38 +25,82 @@ pub fn view<'a>(profiles: &'a [Profile]) -> Element<'a, Message> {
         .into();
     }
 
-    let cards: Vec<Element<'_, Message>> = profiles
+    let search_bar = text_input("Search...", search)
+        .on_input(Message::ProfileSearchChanged)
+        .style(styles::name_input_style)
+        .padding([5, 10])
+        .width(Length::Fixed(200.0));
+
+    let query = search.to_lowercase();
+
+    let enrolled_filtered: Vec<(usize, &Profile)> = profiles
         .iter()
         .enumerate()
-        .map(|(i, p)| profile_card(i, p))
+        .filter(|(_, p)| query.is_empty() || p.name.contains(&query))
         .collect();
+
+    let demo_filtered: Vec<&Profile> = demo_profiles
+        .iter()
+        .filter(|p| query.is_empty() || p.name.contains(&query))
+        .collect();
+
+    let filtered_count = enrolled_filtered.len() + demo_filtered.len();
+    let count_label = text(format!("{} / {}", filtered_count, total))
+        .size(11)
+        .color(dim());
+
+    let clear_btn = button(text("Clear All").size(11))
+        .style(styles::delete_btn)
+        .padding([4, 10])
+        .on_press(Message::ClearProfiles);
+
+    let header = container(
+        row![
+            search_bar,
+            Space::new().width(8.0),
+            count_label,
+            Space::new().width(Length::Fill),
+            clear_btn,
+        ]
+        .align_y(Vertical::Center),
+    )
+    .padding(styles::PAD);
+
+    let mut cards: Vec<Element<'_, Message>> = enrolled_filtered
+        .into_iter()
+        .map(|(i, p)| profile_card(i, p, true))
+        .collect();
+
+    for p in demo_filtered {
+        cards.push(profile_card(0, p, false));
+    }
 
     let content = row(cards).spacing(12).wrap();
 
-    scrollable(container(content).padding(styles::PAD).width(Length::Fill))
-        .direction(Direction::Vertical(
-            Scrollbar::new().width(4).scroller_width(4),
-        ))
-        .style(styles::invisible_scroll)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    column![
+        header,
+        scrollable(container(content).padding(styles::PAD).width(Length::Fill))
+            .style(styles::invisible_scroll)
+            .width(Length::Fill)
+            .height(Length::Fill),
+    ]
+    .into()
 }
 
-fn profile_card<'a>(index: usize, profile: &'a Profile) -> Element<'a, Message> {
-    let del_btn = button(text("Delete").size(11))
-        .style(styles::delete_btn)
-        .padding([2, 6])
-        .on_press(Message::DeleteProfile(index));
+fn profile_card<'a>(index: usize, profile: &'a Profile, deletable: bool) -> Element<'a, Message> {
+    let name_text = text(profile.name.as_str())
+        .size(14)
+        .color(Color::from_rgb(0.90, 0.90, 0.90));
 
-    let header = row![
-        text(profile.name.as_str())
-            .size(14)
-            .color(Color::from_rgb(0.90, 0.90, 0.90)),
-        Space::new().width(Length::Fill),
-        del_btn,
-    ]
-    .align_y(Vertical::Center);
+    let header = if deletable {
+        let del_btn = button(text("Delete").size(11))
+            .style(styles::delete_btn)
+            .padding([2, 6])
+            .on_press(Message::DeleteProfile(index));
+        row![name_text, Space::new().width(Length::Fill), del_btn,].align_y(Vertical::Center)
+    } else {
+        row![name_text, Space::new().width(Length::Fill),].align_y(Vertical::Center)
+    };
 
     let stats = row![
         stat_label(&format!("{:.0}", profile.wpm), "WPM"),

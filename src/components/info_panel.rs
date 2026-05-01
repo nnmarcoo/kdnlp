@@ -1,24 +1,26 @@
 use iced::alignment::Vertical;
-use iced::widget::{Space, column, container, row, rule, text};
-use iced::{Background, Border, Color, Element, Length};
+use iced::widget::scrollable::{Direction, Scrollbar};
+use iced::widget::{Space, column, container, row, rule, scrollable, text};
+use iced::{Color, Element, Length};
+
+use iced::widget::canvas::Cache;
 
 use crate::app::Message;
-use crate::pca;
 use crate::styles;
-use crate::typing::{Profile, Session};
-use crate::widgets::bar_chart::Heatmap;
 use crate::widgets::scatter::ScatterPlot;
 
 pub fn view<'a>(
-    session: &'a Session,
-    profiles: &'a [Profile],
     id_results: &'a [(String, f64)],
+    scatter_points: &'a [(String, [f32; 2])],
+    scatter_session: Option<[f32; 2]>,
+    scatter_cache: &'a Cache,
 ) -> Element<'a, Message> {
     row![
-        dash_card("Flight Times", flight_times_content(session)),
         dash_card("Rankings", rankings_content(id_results)),
-        dash_card("Model Output", model_output_content(id_results)),
-        dash_card("Fingerprint Space", fingerprint_space_content(session, profiles)),
+        dash_card(
+            "Embedding Space",
+            embedding_space_content(scatter_points, scatter_session, scatter_cache)
+        ),
     ]
     .spacing(styles::PAD)
     .padding(styles::PAD)
@@ -44,93 +46,28 @@ fn dash_card<'a>(title: &'a str, content: Element<'a, Message>) -> Element<'a, M
     .into()
 }
 
-fn flight_times_content<'a>(session: &'a Session) -> Element<'a, Message> {
-    if session.is_empty() {
-        return placeholder_content("Start typing to see your keystroke intervals.");
-    }
-
-    let stats = stats_row(session);
-
-    column![stats, Heatmap::from_vecs(&session.bigrams)]
-        .spacing(6)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-}
-
-fn stats_row<'a>(session: &'a Session) -> Element<'a, Message> {
-    row![
-        stat_pill("WPM", &format!("{:.0}", session.wpm())),
-        stat_pill("avg", &format!("{:.0}ms", session.avg_interval_ms())),
-        stat_pill("dwell", &format!("{:.0}ms", session.avg_dwell_ms())),
-        stat_pill("bigrams", &format!("{}", session.unique_bigram_count())),
-        stat_pill("total", &format!("{}", session.interval_count())),
-        Space::new().width(Length::Fill),
-    ]
-    .spacing(8)
-    .into()
-}
-
-fn stat_pill<'a>(label: &'a str, value: &str) -> Element<'a, Message> {
-    column![
-        text(value.to_string())
-            .size(12)
-            .color(Color::from_rgb(0.85, 0.85, 0.85)),
-        text(label).size(9).color(dim()),
-    ]
-    .spacing(1)
-    .into()
-}
-
 fn rankings_content<'a>(id_results: &'a [(String, f64)]) -> Element<'a, Message> {
     if id_results.is_empty() {
-        return placeholder_content("Run Identify to see ranked matches.");
+        return placeholder_content("Start typing to see ranked matches.");
     }
-
-    let score_range = {
-        let vals: Vec<f64> = id_results.iter().map(|r| r.1).collect();
-        let min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
-        let max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        (min, (max - min).max(1e-6))
-    };
 
     let rows: Vec<Element<'_, Message>> = id_results
         .iter()
         .enumerate()
         .map(|(i, (name, score))| {
-            // Higher similarity = better match, so invert t for color/bar
-            let t = 1.0 - ((score - score_range.0) / score_range.1).clamp(0.0, 1.0) as f32;
-            let color = Color::from_rgb(0.38 + 0.54 * t, 0.82 - 0.47 * t, 0.48 - 0.13 * t);
-            let filled = (((1.0 - t) * 90.0 + 5.0) as u16).max(1);
-            let empty = 100u16.saturating_sub(filled);
-
-            let bar = row![
-                container(Space::new())
-                    .style(move |_: &iced::Theme| container::Style {
-                        background: Some(Background::Color(color)),
-                        border: Border {
-                            radius: 3.0.into(),
-                            ..Border::default()
-                        },
-                        ..container::Style::default()
-                    })
-                    .width(Length::FillPortion(filled))
-                    .height(Length::Fixed(6.0)),
-                Space::new().width(Length::FillPortion(empty)),
-            ];
-
             row![
                 text(format!("{}.", i + 1))
                     .size(11)
                     .color(dim())
-                    .width(Length::Fixed(18.0)),
+                    .width(Length::Fixed(22.0)),
                 text(name.as_str())
                     .size(12)
-                    .color(Color::from_rgb(0.85, 0.85, 0.85))
-                    .width(Length::Fixed(80.0)),
-                bar,
-                Space::new().width(Length::Fixed(6.0)),
-                text(format!("{:.3}", score)).size(11).color(dim()),
+                    .color(Color::from_rgb(0.85, 0.85, 0.85)),
+                Space::new().width(Length::Fill),
+                text(format!("{:.3}", score))
+                    .size(11)
+                    .color(dim())
+                    .width(Length::Fixed(40.0)),
             ]
             .align_y(Vertical::Center)
             .spacing(6)
@@ -138,73 +75,34 @@ fn rankings_content<'a>(id_results: &'a [(String, f64)]) -> Element<'a, Message>
         })
         .collect();
 
-    column(rows)
-        .spacing(10)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-}
-
-fn model_output_content<'a>(id_results: &'a [(String, f64)]) -> Element<'a, Message> {
-    if id_results.is_empty() {
-        return placeholder_content("Run Identify to see the best match.");
-    }
-
-    let (name, score) = &id_results[0];
-
-    column![
-        text(name.as_str())
-            .size(28)
-            .color(Color::from_rgb(0.90, 0.90, 0.90)),
-        text(format!("similarity {:.3}", score))
-            .size(11)
-            .color(dim()),
-    ]
-    .spacing(4)
+    scrollable(
+        column(rows)
+            .spacing(10)
+            .width(Length::Fill)
+            .padding(iced::Padding {
+                top: 0.0,
+                right: 12.0,
+                bottom: 0.0,
+                left: 0.0,
+            }),
+    )
+    .direction(Direction::Vertical(
+        Scrollbar::new().width(4).scroller_width(4),
+    ))
     .width(Length::Fill)
     .height(Length::Fill)
     .into()
 }
 
-fn fingerprint_space_content<'a>(
-    session: &'a Session,
-    profiles: &'a [Profile],
+fn embedding_space_content<'a>(
+    points: &'a [(String, [f32; 2])],
+    session_pt: Option<[f32; 2]>,
+    cache: &'a Cache,
 ) -> Element<'a, Message> {
-    if profiles.len() < 2 {
-        return placeholder_content("Enroll 2+ profiles to see the projection.");
+    if points.len() < 2 {
+        return placeholder_content("Enroll at least 2 users to see the embedding space.");
     }
-    if session.is_empty() {
-        return placeholder_content("Start typing to see where you land.");
-    }
-
-    let global_mean = {
-        let all: Vec<f64> = profiles
-            .iter()
-            .flat_map(|p| p.bigrams.values().copied())
-            .collect();
-        if all.is_empty() {
-            200.0
-        } else {
-            all.iter().sum::<f64>() / all.len() as f64
-        }
-    };
-
-    let profile_vecs: Vec<(String, std::collections::HashMap<(char, char), f64>)> = profiles
-        .iter()
-        .map(|p| (p.name.clone(), p.bigrams.clone()))
-        .collect();
-
-    let session_avg = session.averaged();
-    let session_input = if session.is_empty() {
-        None
-    } else {
-        Some(&session_avg)
-    };
-
-    let (projected, session_pt) =
-        pca::project_profiles(&profile_vecs, session_input, global_mean);
-
-    ScatterPlot::new(projected, session_pt).into()
+    ScatterPlot::new(points.to_vec(), session_pt, cache).into_element()
 }
 
 fn placeholder_content<'a>(msg: &'static str) -> Element<'a, Message> {

@@ -30,10 +30,12 @@ fn init() -> (App, Task<Message>) {
     // Try loading the LSTM model from the default path next to the executable,
     // or from D:/kdnlp_model as a fallback for development.
     let model_loaded = {
-        let exe_model = std::env::current_exe().ok()
+        let exe_model = std::env::current_exe()
+            .ok()
             .and_then(|p| p.parent().map(|d| d.join("model")));
         let fallback = std::path::Path::new("D:/kdnlp_model");
-        let model_path = exe_model.as_deref()
+        let model_path = exe_model
+            .as_deref()
             .filter(|p| p.join("norm_stats.json").exists())
             .unwrap_or(fallback);
         embedder::load(model_path)

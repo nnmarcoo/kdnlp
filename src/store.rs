@@ -35,6 +35,18 @@ struct StoredProfile {
     embedding: Option<Vec<f32>>,
 }
 
+const DEMO_JSON: &str = include_str!("demo_profiles.json");
+
+pub fn load_demo(n: usize) -> Vec<Profile> {
+    match serde_json::from_str::<Vec<StoredProfile>>(DEMO_JSON) {
+        Ok(stored) => stored.into_iter().take(n).map(stored_to_profile).collect(),
+        Err(e) => {
+            eprintln!("kdnlp: failed to parse demo profiles: {e}");
+            Vec::new()
+        }
+    }
+}
+
 fn profiles_path() -> Option<PathBuf> {
     dirs::data_dir().map(|d| d.join("kdnlp").join("profiles.json"))
 }
@@ -44,11 +56,11 @@ pub fn save(profiles: &[Profile]) {
         eprintln!("kdnlp: could not determine data directory");
         return;
     };
-    if let Some(parent) = path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            eprintln!("kdnlp: could not create data dir: {e}");
-            return;
-        }
+    if let Some(parent) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        eprintln!("kdnlp: could not create data dir: {e}");
+        return;
     }
     let stored: Vec<StoredProfile> = profiles.iter().map(profile_to_stored).collect();
     match serde_json::to_string_pretty(&stored) {

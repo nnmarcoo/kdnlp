@@ -36,7 +36,7 @@ class EmbedderONNX(nn.Module):
         return F.normalize(out, p=2, dim=1)
 
 
-def export(model_dir, max_len=50):
+def export(model_dir):
     model_dir = Path(model_dir)
 
     with open(model_dir / "norm_stats.json") as f:
@@ -60,8 +60,9 @@ def export(model_dir, max_len=50):
     model = EmbedderONNX(lstm1, lstm2, fc, hidden_size)
     model.eval()
 
-    dummy_x = torch.zeros(1, max_len, len(TIMING_COLS))
-    dummy_lengths = torch.tensor([max_len])
+    # Dummy input with a small length; seq_len is fully dynamic
+    dummy_x = torch.zeros(1, 10, len(TIMING_COLS))
+    dummy_lengths = torch.tensor([10])
 
     out_path = model_dir / "embedder.onnx"
     torch.onnx.export(
@@ -72,6 +73,7 @@ def export(model_dir, max_len=50):
         output_names=["embedding"],
         dynamic_axes={
             "keystrokes": {1: "seq_len"},
+            "lengths":    {0: "batch"},
         },
         opset_version=17,
     )
@@ -83,6 +85,5 @@ def export(model_dir, max_len=50):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", default="D:/kdnlp_model")
-    parser.add_argument("--max_len",   type=int, default=50)
     args = parser.parse_args()
-    export(args.model_dir, args.max_len)
+    export(args.model_dir)

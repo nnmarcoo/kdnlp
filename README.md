@@ -8,37 +8,45 @@
 
 ---
 
-A desktop app that identifies who is typing based on keystroke dynamics — the rhythm, timing, and cadence of how a person types. As you type a prompt, it captures inter-key intervals, dwell times, and flight times per bigram, embeds them using a pretrained BiLSTM, and compares the result against enrolled user profiles using cosine similarity.
+A desktop app that identifies who is typing based on keystroke dynamics — the rhythm, timing, and cadence of how a person types. As you type a prompt, it captures inter-key intervals, dwell times, and flight times per bigram, embeds them using a pretrained BiLSTM, and ranks enrolled profiles by cosine similarity in real time.
 
 Built with [Iced](https://iced.rs/) and [ONNX Runtime](https://onnxruntime.ai/).
 
 ## How it works
 
-1. **Enroll** — type a prompt and enter your name. The app embeds your session into a 128-dimensional vector using the pretrained model and saves it as your profile.
-2. **Identify** — type again and hit Identify. The app embeds the new session and ranks all enrolled profiles by cosine similarity. The closest match is shown as the predicted identity.
+1. **Type** — start typing the prompt. Rankings and the embedding space update automatically after every keystroke (threshold: 5 bigrams).
+2. **Enroll** — enter a name and press Enroll to save your typing profile. Profiles are persisted across sessions.
+3. **Demo users** — load 5–500 pre-computed profiles from the Aalto dataset via the dropdown. These are held-out users never seen during training and are not persisted.
 
-New users can be enrolled at any time without retraining the model.
+New users can be enrolled at any time without retraining.
+
+## UI
+
+- **Demo tab** — typing panel, real-time rankings card, and a 2D embedding space (MDS projection of cosine distances).
+- **Profiles tab** — view, search, and delete enrolled profiles. Demo profiles are shown without a delete button.
 
 ## Model
 
-A dual stacked bidirectional LSTM (TypeNet-inspired) trained with supervised contrastive loss on the [Aalto University Keystroke Dataset](https://userinterfaces.aalto.fi/136Mkeystrokes/) — 160,000 participants, open-enrollment evaluation.
+Dual stacked bidirectional LSTM (TypeNet-inspired) trained with supervised contrastive loss on the [Aalto University Keystroke Dataset](https://userinterfaces.aalto.fi/136Mkeystrokes/) — 160,000 participants, 2,000 held-out for evaluation.
 
-Features per keystroke bigram: `iki_ms` (inter-key interval), `dwell_ms` (key hold time), `flight_ms` (release-to-press gap).
+Features per bigram: `iki_ms`, `dwell_ms`, `flight_ms`. Output: 128-dim L2-normalized embedding.
 
-The trained model achieves ~5% Equal Error Rate on held-out users never seen during training.
+**Evaluation on held-out users:**
+- EER: ~4.1%
+- AUC: 0.992
+- EER plateaus at ~50 bigrams (~one sentence of typing)
 
-See [`models/`](models/) for the full training pipeline.
+See [`models/`](models/) for the full training and evaluation pipeline.
 
 ## Build
 
 **Requirements**
-
 - [Rust](https://www.rust-lang.org/tools/install)
-- ONNX Runtime shared library (see below)
+- ONNX Runtime shared library (v1.24.x)
 
 **Windows**
 
-Place `onnxruntime.dll` (v1.24.x) in `lib/windows-x64/`. It will be copied next to the exe automatically by the build script.
+Place `onnxruntime.dll` in `lib/windows-x64/`. It will be copied next to the exe automatically.
 
 ```
 cargo run --release
@@ -47,23 +55,20 @@ cargo run --release
 **Linux**
 
 ```bash
-# Download and place the ONNX Runtime library
 curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-linux-x64-1.24.4.tgz | tar xz
 cp onnxruntime-linux-x64-1.24.4/lib/libonnxruntime.so lib/linux-x64/
 
 cargo run --release
 ```
 
-The build script copies the library and model files next to the exe on every build. No environment variables required.
-
 ## Model files
 
-The pretrained model lives in `model/`:
-- `embedder.onnx` — the exported BiLSTM embedder
-- `norm_stats.json` — per-feature z-normalization statistics from the training set
+`model/`:
+- `embedder.onnx` — exported BiLSTM embedder
+- `norm_stats.json` — per-feature z-normalization statistics
 
-To retrain or export a new model, see [`models/`](models/).
+The 500 demo profiles are embedded in the binary at compile time (`src/demo_profiles.json`). To regenerate them after retraining, see [`models/`](models/).
 
 ---
 
-*This is a demonstration. Accuracy improves with more enrolled sessions per user.*
+*Accuracy improves with more enrolled sessions per user.*

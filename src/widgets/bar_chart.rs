@@ -119,7 +119,7 @@ impl<Message: 'static> Widget<Message, iced::Theme, Renderer> for Heatmap {
                     line_height: text::LineHeight::default(),
                     font: Font::MONOSPACE,
                     align_x: iced::alignment::Horizontal::Center.into(),
-                    align_y: iced::alignment::Vertical::Center.into(),
+                    align_y: iced::alignment::Vertical::Center,
                     shaping: text::Shaping::Basic,
                     wrapping: text::Wrapping::None,
                 },
@@ -140,7 +140,7 @@ impl<Message: 'static> Widget<Message, iced::Theme, Renderer> for Heatmap {
                     line_height: text::LineHeight::default(),
                     font: Font::MONOSPACE,
                     align_x: iced::alignment::Horizontal::Center.into(),
-                    align_y: iced::alignment::Vertical::Center.into(),
+                    align_y: iced::alignment::Vertical::Center,
                     shaping: text::Shaping::Basic,
                     wrapping: text::Wrapping::None,
                 },
@@ -178,30 +178,30 @@ impl<Message: 'static> Widget<Message, iced::Theme, Renderer> for Heatmap {
                     Background::Color(color),
                 );
 
-                if cw >= 22.0 {
-                    if let Some(&ms) = avgs.get(&(row_ch, col_ch)) {
-                        let text_color = if is_dark(color) {
-                            Color::from_rgba(1.0, 1.0, 1.0, 0.7)
-                        } else {
-                            Color::from_rgba(0.0, 0.0, 0.0, 0.7)
-                        };
-                        renderer.fill_text(
-                            Text {
-                                content: format!("{:.0}", ms),
-                                bounds: Size::new(cw, cw),
-                                size: Pixels(8.0),
-                                line_height: text::LineHeight::default(),
-                                font: Font::MONOSPACE,
-                                align_x: iced::alignment::Horizontal::Center.into(),
-                                align_y: iced::alignment::Vertical::Center.into(),
-                                shaping: text::Shaping::Basic,
-                                wrapping: text::Wrapping::None,
-                            },
-                            Point::new(cx + cw / 2.0, cy + cw / 2.0),
-                            text_color,
-                            *viewport,
-                        );
-                    }
+                if cw >= 22.0
+                    && let Some(&ms) = avgs.get(&(row_ch, col_ch))
+                {
+                    let text_color = if is_dark(color) {
+                        Color::from_rgba(1.0, 1.0, 1.0, 0.7)
+                    } else {
+                        Color::from_rgba(0.0, 0.0, 0.0, 0.7)
+                    };
+                    renderer.fill_text(
+                        Text {
+                            content: format!("{:.0}", ms),
+                            bounds: Size::new(cw, cw),
+                            size: Pixels(8.0),
+                            line_height: text::LineHeight::default(),
+                            font: Font::MONOSPACE,
+                            align_x: iced::alignment::Horizontal::Center.into(),
+                            align_y: iced::alignment::Vertical::Center,
+                            shaping: text::Shaping::Basic,
+                            wrapping: text::Wrapping::None,
+                        },
+                        Point::new(cx + cw / 2.0, cy + cw / 2.0),
+                        text_color,
+                        *viewport,
+                    );
                 }
             }
         }

@@ -1,120 +1,105 @@
-use std::collections::HashMap;
+const DIM: usize = 128;
 
-pub fn project_profiles(
-    profiles: &[(String, HashMap<(char, char), f64>)],
-    session: Option<&HashMap<(char, char), f64>>,
-    global_mean: f64,
-) -> (Vec<(String, [f32; 2])>, Option<[f32; 2]>) {
-    let vocab: Vec<(char, char)> = {
-        let mut keys: std::collections::HashSet<(char, char)> = profiles[0].1.keys().copied().collect();
-        for (_, m) in profiles.iter().skip(1) {
-            keys.retain(|k| m.contains_key(k));
-        }
-        if let Some(s) = session {
-            keys.retain(|k| s.contains_key(k));
-        }
-        if keys.len() < 2 {
-            // fall back to union if intersection is too sparse
-            let mut union: std::collections::HashSet<(char, char)> = profiles
-                .iter()
-                .flat_map(|(_, m)| m.keys().copied())
-                .collect();
-            if let Some(s) = session {
-                union.extend(s.keys().copied());
-            }
-            keys = union;
-        }
-        let mut v: Vec<_> = keys.into_iter().collect();
-        v.sort_unstable();
-        v
-    };
+type ProjectResult = (Vec<(String, [f32; 2])>, Option<[f32; 2]>);
 
-    let d = vocab.len();
-    if d < 2 {
-        let labeled: Vec<_> = profiles
+/// Project all profile embeddings + the current session embedding into 2D using
+/// classical MDS, so 2D distances reflect actual cosine distances in embedding space.
+pub fn project(profiles: &[(String, &[f32; DIM])], session: Option<&[f32; DIM]>) -> ProjectResult {
+    let n_profiles = profiles.len();
+    let n = n_profiles + session.is_some() as usize;
+
+    if n < 2 {
+        let labeled = profiles
             .iter()
-            .map(|(n, _)| (n.clone(), [0.0f32; 2]))
+            .map(|(name, _)| (name.clone(), [0.0f32; 2]))
             .collect();
         return (labeled, session.map(|_| [0.0f32; 2]));
     }
 
-    let to_vec = |map: &HashMap<(char, char), f64>| -> Vec<f64> {
-        vocab
-            .iter()
-            .map(|k| map.get(k).copied().unwrap_or(global_mean))
-            .collect()
-    };
-
-    let normalize = |mut v: Vec<f64>| -> Vec<f64> {
-        let mean = v.iter().sum::<f64>() / v.len() as f64;
-        v.iter_mut().for_each(|x| *x -= mean);
-        v
-    };
-
-    let mut rows: Vec<Vec<f64>> = profiles.iter().map(|(_, m)| normalize(to_vec(m))).collect();
-    let session_row = session.map(|s| normalize(to_vec(s)));
-    if let Some(ref sr) = session_row {
-        rows.push(sr.clone());
+    // Collect all embeddings
+    let mut embs: Vec<&[f32; DIM]> = profiles.iter().map(|(_, e)| *e).collect();
+    if let Some(s) = session {
+        embs.push(s);
     }
 
-    let n = rows.len();
-    let means: Vec<f64> = (0..d)
-        .map(|j| rows.iter().map(|r| r[j]).sum::<f64>() / n as f64)
-        .collect();
-
-    for row in &mut rows {
-        for (j, v) in row.iter_mut().enumerate() {
-            *v -= means[j];
+    // Build squared cosine distance matrix: d = 1 - cosine_sim, then squared
+    let mut d2 = vec![0.0f64; n * n];
+    for i in 0..n {
+        for j in 0..n {
+            if i != j {
+                let sim: f32 = embs[i].iter().zip(embs[j].iter()).map(|(a, b)| a * b).sum();
+                let dist = (1.0 - sim.clamp(-1.0, 1.0)) as f64;
+                d2[i * n + j] = dist * dist;
+            }
         }
     }
 
-    let pc1 = top_eigenvector(&rows, d, 50);
-    let deflated = deflate(&rows, &pc1);
-    let pc2 = top_eigenvector(&deflated, d, 50);
+    // Classical MDS: double-center the squared distance matrix
+    // B = -0.5 * H * D2 * H  where H = I - (1/n) * 11^T
+    let mut b = vec![0.0f64; n * n];
+    let row_means: Vec<f64> = (0..n)
+        .map(|i| (0..n).map(|j| d2[i * n + j]).sum::<f64>() / n as f64)
+        .collect();
+    let total_mean: f64 = row_means.iter().sum::<f64>() / n as f64;
+    for i in 0..n {
+        for j in 0..n {
+            let col_mean = (0..n).map(|k| d2[k * n + j]).sum::<f64>() / n as f64;
+            b[i * n + j] = -0.5 * (d2[i * n + j] - row_means[i] - col_mean + total_mean);
+        }
+    }
 
-    let project = |row: &Vec<f64>| -> [f32; 2] {
-        let x = dot(row, &pc1) as f32;
-        let y = dot(row, &pc2) as f32;
-        [x, y]
-    };
+    // Power iteration for top 2 eigenvectors of B
+    let ev1 = top_eigenvector(&b, n, 100);
+    let b_deflated = deflate(&b, n, &ev1);
+    let ev2 = top_eigenvector(&b_deflated, n, 100);
 
-    let profile_count = profiles.len();
-    let labeled: Vec<(String, [f32; 2])> = profiles
-        .iter()
-        .zip(rows.iter())
-        .map(|((name, _), row)| (name.clone(), project(row)))
+    // Coordinates: scale by sqrt of eigenvalue
+    let l1 = eigenvalue(&b, n, &ev1).max(0.0).sqrt();
+    let l2 = eigenvalue(&b_deflated, n, &ev2).max(0.0).sqrt();
+
+    let coords: Vec<[f32; 2]> = (0..n)
+        .map(|i| [(ev1[i] * l1) as f32, (ev2[i] * l2) as f32])
         .collect();
 
-    let session_pt = session_row.as_ref().map(|_| project(&rows[profile_count]));
+    let labeled = profiles
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _))| (name.clone(), coords[i]))
+        .collect();
+
+    let session_pt = session.map(|_| coords[n_profiles]);
 
     (labeled, session_pt)
 }
 
-fn dot(a: &[f64], b: &[f64]) -> f64 {
-    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
+fn mat_vec(b: &[f64], n: usize, v: &[f64]) -> Vec<f64> {
+    (0..n)
+        .map(|i| (0..n).map(|j| b[i * n + j] * v[j]).sum())
+        .collect()
 }
 
-fn top_eigenvector(rows: &[Vec<f64>], d: usize, iters: usize) -> Vec<f64> {
-    let mut v: Vec<f64> = (0..d).map(|i| if i == 0 { 1.0 } else { 0.0 }).collect();
+fn top_eigenvector(b: &[f64], n: usize, iters: usize) -> Vec<f64> {
+    let mut v: Vec<f64> = (0..n).map(|i| if i == 0 { 1.0 } else { 0.0 }).collect();
     for _ in 0..iters {
-        let mut w = vec![0.0f64; d];
-        for row in rows {
-            let s = dot(row, &v);
-            for (j, wj) in w.iter_mut().enumerate() {
-                *wj += s * row[j];
-            }
-        }
-        let norm = dot(&w, &w).sqrt().max(1e-10);
+        let w = mat_vec(b, n, &v);
+        let norm = w.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-10);
         v = w.iter().map(|x| x / norm).collect();
     }
     v
 }
 
-fn deflate(rows: &[Vec<f64>], pc: &[f64]) -> Vec<Vec<f64>> {
-    rows.iter()
-        .map(|row| {
-            let s = dot(row, pc);
-            row.iter().zip(pc.iter()).map(|(x, p)| x - s * p).collect()
-        })
-        .collect()
+fn eigenvalue(b: &[f64], n: usize, v: &[f64]) -> f64 {
+    let bv = mat_vec(b, n, v);
+    bv.iter().zip(v.iter()).map(|(x, y)| x * y).sum()
+}
+
+fn deflate(b: &[f64], n: usize, v: &[f64]) -> Vec<f64> {
+    let lambda = eigenvalue(b, n, v);
+    let mut out = b.to_vec();
+    for i in 0..n {
+        for j in 0..n {
+            out[i * n + j] -= lambda * v[i] * v[j];
+        }
+    }
+    out
 }

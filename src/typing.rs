@@ -12,13 +12,11 @@ pub const PROMPTS: &[&str] = &[
     "after dinner they cleared the table and sat together in the living room with the lights turned low talking about nothing in particular until one by one they drifted off to bed and the house went quiet",
 ];
 
-pub fn random_prompt() -> &'static str {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos() as usize;
-    PROMPTS[nanos % PROMPTS.len()]
+pub fn next_prompt(_current: &str) -> &'static str {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static IDX: AtomicUsize = AtomicUsize::new(0);
+    let i = IDX.fetch_add(1, Ordering::Relaxed);
+    PROMPTS[i % PROMPTS.len()]
 }
 
 #[derive(Clone, Debug)]
@@ -36,6 +34,7 @@ impl KeyEvent {
     }
 }
 
+#[derive(Clone)]
 struct PendingFlight {
     bigram: (char, char),
     vec_idx: usize,
@@ -46,6 +45,7 @@ struct PendingFlight {
     press_instant: Instant,
 }
 
+#[derive(Clone)]
 pub struct Session {
     pub text: String,
     pub events: Vec<KeyEvent>,
@@ -122,10 +122,10 @@ impl Session {
     pub fn push_release(&mut self, ch: char, t: Instant) {
         let release_ms = t.duration_since(self.start_time).as_millis() as u64;
         if let Some(stack) = self.pending_releases.get_mut(&ch) {
-            if let Some(idx) = stack.pop() {
-                if let Some(ev) = self.events.get_mut(idx) {
-                    ev.release_ms = Some(release_ms);
-                }
+            if let Some(idx) = stack.pop()
+                && let Some(ev) = self.events.get_mut(idx)
+            {
+                ev.release_ms = Some(release_ms);
             }
             if stack.is_empty() {
                 self.pending_releases.remove(&ch);
@@ -225,23 +225,12 @@ impl Session {
         words / (elapsed_ms / 60_000.0)
     }
 
-    pub fn avg_interval_ms(&self) -> f64 {
-        if self.log.is_empty() {
-            return 0.0;
-        }
-        self.log.iter().map(|(_, ms)| ms).sum::<f64>() / self.log.len() as f64
-    }
-
     pub fn avg_dwell_ms(&self) -> f64 {
         let dwells: Vec<f64> = self.events.iter().filter_map(|e| e.dwell_ms()).collect();
         if dwells.is_empty() {
             return 0.0;
         }
         dwells.iter().sum::<f64>() / dwells.len() as f64
-    }
-
-    pub fn unique_bigram_count(&self) -> usize {
-        self.bigrams.len()
     }
 
     pub fn clear(&mut self) {
@@ -256,6 +245,7 @@ impl Session {
     }
 }
 
+#[derive(Clone)]
 pub struct Profile {
     pub name: String,
     pub bigrams: HashMap<(char, char), f64>,
