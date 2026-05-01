@@ -8,3 +8,6 @@ keystrokes.zip
 
 # Processed data
 models/processed/
+
+# ONNX Runtime extracted release
+onnxruntime-linux-x64-*/
