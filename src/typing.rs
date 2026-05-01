@@ -40,8 +40,10 @@ struct PendingFlight {
     bigram: (char, char),
     vec_idx: usize,
     log_idx: usize,
+    seq_idx: usize,
     next_press: Instant,
     prev_char: char,
+    press_instant: Instant,
 }
 
 pub struct Session {
@@ -49,6 +51,8 @@ pub struct Session {
     pub events: Vec<KeyEvent>,
     pub bigrams: HashMap<(char, char), Vec<f64>>,
     pub log: Vec<((char, char), f64)>,
+    /// Ordered sequence of (iki_ms, dwell_ms, flight_ms) per bigram for model inference.
+    pub sequence: Vec<((char, char), f64, f64, f64)>,
     start_time: Instant,
     last_char: Option<char>,
     last_press: Option<Instant>,
@@ -63,6 +67,7 @@ impl Default for Session {
             events: Vec::new(),
             bigrams: HashMap::new(),
             log: Vec::new(),
+            sequence: Vec::new(),
             start_time: Instant::now(),
             last_char: None,
             last_press: None,
@@ -87,12 +92,17 @@ impl Session {
             let log_idx = self.log.len();
             self.log.push((bigram, iki_ms));
 
+            let seq_idx = self.sequence.len();
+            self.sequence.push((bigram, iki_ms, 0.0, 0.0));
+
             self.pending_flight = Some(PendingFlight {
                 bigram,
                 vec_idx,
                 log_idx,
+                seq_idx,
                 next_press: t,
                 prev_char: prev,
+                press_instant: prev_t,
             });
         }
 
@@ -124,6 +134,7 @@ impl Session {
 
         if let Some(pf) = self.pending_flight.take() {
             if ch == pf.prev_char {
+                let dwell_ms = t.duration_since(pf.press_instant).as_secs_f64() * 1000.0;
                 let flight_ms = match pf.next_press.checked_duration_since(t) {
                     Some(dur) => dur.as_secs_f64() * 1000.0,
                     None => -(t.duration_since(pf.next_press).as_secs_f64() * 1000.0),
@@ -137,6 +148,10 @@ impl Session {
                 }
                 if let Some(entry) = self.log.get_mut(pf.log_idx) {
                     entry.1 = flight_ms;
+                }
+                if let Some(entry) = self.sequence.get_mut(pf.seq_idx) {
+                    entry.2 = dwell_ms;
+                    entry.3 = flight_ms;
                 }
             } else {
                 self.pending_flight = Some(pf);
@@ -168,6 +183,7 @@ impl Session {
         }
 
         self.text.pop();
+        self.sequence.pop();
         if let Some(entry) = self.log.pop() {
             let bigram = entry.0;
             if let Some(v) = self.bigrams.get_mut(&bigram) {
@@ -249,6 +265,8 @@ pub struct Profile {
     pub wpm: f64,
     pub avg_dwell_ms: f64,
     pub dwell_count: usize,
+    /// L2-normalized 128-dim embedding from the LSTM model, if available.
+    pub embedding: Option<Box<[f32; 128]>>,
 }
 
 impl Profile {
@@ -267,6 +285,7 @@ impl Profile {
             wpm: session.wpm(),
             avg_dwell_ms: session.avg_dwell_ms(),
             dwell_count,
+            embedding: crate::embedder::embed(session).map(Box::new),
         }
     }
 

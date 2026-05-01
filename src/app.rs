@@ -4,7 +4,7 @@ use iced::{Element, Subscription, Task, Theme, window};
 use std::time::Instant;
 
 use crate::components;
-use crate::plots::{self, IdentificationMethod};
+use crate::plots;
 use crate::store;
 use crate::typing::{Profile, Session, random_prompt};
 
@@ -23,7 +23,6 @@ pub struct App {
     pub profiles: Vec<Profile>,
     pub current_prompt: &'static str,
     pub id_results: Vec<(String, f64)>,
-    pub method: IdentificationMethod,
     pub fixed_prompt: bool,
 }
 
@@ -38,7 +37,6 @@ impl Default for App {
             profiles: store::load(),
             current_prompt: random_prompt(),
             id_results: Vec::new(),
-            method: IdentificationMethod::FlightTime,
             fixed_prompt: false,
         }
     }
@@ -56,7 +54,6 @@ pub enum Message {
     BackspaceReleased(Instant),
     Enroll,
     Identify,
-    MethodChanged(IdentificationMethod),
     Clear,
     ToggleFixedPrompt,
     ScaleUp,
@@ -156,6 +153,21 @@ impl App {
                     existing.dwell_count += new_dwell_count;
                     existing.char_count += new_chars;
                     existing.interval_count += self.session.interval_count();
+                    // Update embedding: average old and new, then re-normalize
+                    if let Some(new_emb) = crate::embedder::embed(&self.session) {
+                        existing.embedding = Some(Box::new(match &existing.embedding {
+                            Some(old_emb) => {
+                                let mut avg = [0f32; 128];
+                                for i in 0..128 {
+                                    avg[i] = (old_emb[i] + new_emb[i]) * 0.5;
+                                }
+                                let norm: f32 = avg.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-8);
+                                avg.iter_mut().for_each(|x| *x /= norm);
+                                avg
+                            }
+                            None => new_emb,
+                        }));
+                    }
                 } else {
                     self.profiles
                         .push(Profile::from_session(name, &self.session));
@@ -165,14 +177,11 @@ impl App {
                 self.session.clear();
                 self.current_prompt = self.next_prompt();
             }
-            Message::MethodChanged(method) => {
-                self.method = method;
-            }
             Message::Identify => {
                 if self.profiles.is_empty() || self.session.is_empty() {
                     return Task::none();
                 }
-                self.id_results = plots::rank_profiles(self.method, &self.session, &self.profiles);
+                self.id_results = plots::rank_profiles(&self.session, &self.profiles);
             }
             Message::Clear => {
                 self.session.clear();
@@ -227,7 +236,6 @@ impl App {
                 &self.session,
                 self.profiles.len(),
                 self.current_prompt,
-                self.method,
                 self.fixed_prompt,
             ),
             rule::horizontal(1),

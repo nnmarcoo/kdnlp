@@ -106,8 +106,8 @@ def run(data_dir, n_users_list, seed=42):
     np.random.seed(seed)
 
     print("Loading data...")
-    train_df = pd.read_csv(f"{data_dir}/train.csv")
-    test_df = pd.read_csv(f"{data_dir}/test.csv")
+    train_df = pd.read_csv(f"{data_dir}/train.csv", encoding_errors="ignore")
+    test_df = pd.read_csv(f"{data_dir}/test.csv", encoding_errors="ignore")
 
     # Sample a pool up to the largest group size we'll test so that
     # smaller subsets are always strict subsets of larger ones.

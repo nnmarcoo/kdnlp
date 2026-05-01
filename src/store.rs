@@ -31,6 +31,8 @@ struct StoredProfile {
     avg_dwell_ms: f64,
     #[serde(default)]
     dwell_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    embedding: Option<Vec<f32>>,
 }
 
 fn profiles_path() -> Option<PathBuf> {
@@ -91,6 +93,7 @@ fn profile_to_stored(p: &Profile) -> StoredProfile {
         wpm: p.wpm,
         avg_dwell_ms: p.avg_dwell_ms,
         dwell_count: p.dwell_count,
+        embedding: p.embedding.as_ref().map(|e| e.to_vec()),
     }
 }
 
@@ -146,6 +149,10 @@ fn stored_to_profile(s: StoredProfile) -> Profile {
         };
         (wpm, avg_dwell_ms, dwell_count)
     };
+    let embedding = s.embedding.and_then(|v| {
+        let arr: Box<[f32; 128]> = v.into_boxed_slice().try_into().ok()?;
+        Some(arr)
+    });
     Profile {
         name: s.name,
         bigrams,
@@ -155,5 +162,6 @@ fn stored_to_profile(s: StoredProfile) -> Profile {
         wpm,
         avg_dwell_ms,
         dwell_count,
+        embedding,
     }
 }

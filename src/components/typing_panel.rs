@@ -1,9 +1,8 @@
 use iced::alignment::Vertical;
-use iced::widget::{Space, button, column, container, pick_list, row, text_input};
+use iced::widget::{Space, button, column, container, row, text_input};
 use iced::{Element, Length};
 
 use crate::app::Message;
-use crate::plots::{IdentificationMethod, METHODS};
 use crate::styles;
 use crate::typing::Session;
 use crate::widgets::typing_widget::TypingWidget;
@@ -13,7 +12,6 @@ pub fn view<'a>(
     session: &'a Session,
     profiles_count: usize,
     prompt: &'a str,
-    method: IdentificationMethod,
     fixed_prompt: bool,
 ) -> Element<'a, Message> {
     let typing = TypingWidget::new(
@@ -26,7 +24,7 @@ pub fn view<'a>(
         Message::Enroll,
     );
 
-    let controls = view_controls(name_input, session, profiles_count, method, fixed_prompt);
+    let controls = view_controls(name_input, session, profiles_count, fixed_prompt);
 
     container(
         column![typing, controls]
@@ -41,7 +39,6 @@ fn view_controls<'a>(
     name_input: &'a str,
     session: &'a Session,
     profiles_count: usize,
-    method: IdentificationMethod,
     fixed_prompt: bool,
 ) -> Element<'a, Message> {
     let has_session = !session.is_empty();
@@ -80,8 +77,6 @@ fn view_controls<'a>(
         button("fixed prompt").style(styles::mode_btn).on_press(Message::ToggleFixedPrompt)
     };
 
-    let method_picker = pick_list(METHODS, Some(method), Message::MethodChanged);
-
     row![
         name_field,
         enroll_btn,
@@ -89,7 +84,6 @@ fn view_controls<'a>(
         clear_btn,
         Space::new().width(Length::Fill),
         fixed_btn,
-        method_picker,
     ]
     .spacing(styles::SPACING)
     .align_y(Vertical::Center)

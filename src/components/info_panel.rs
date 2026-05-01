@@ -87,17 +87,19 @@ fn rankings_content<'a>(id_results: &'a [(String, f64)]) -> Element<'a, Message>
         return placeholder_content("Run Identify to see ranked matches.");
     }
 
-    let max_dist = id_results
-        .last()
-        .map(|r| r.1)
-        .unwrap_or(1.0)
-        .max(1.0);
+    let score_range = {
+        let vals: Vec<f64> = id_results.iter().map(|r| r.1).collect();
+        let min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        (min, (max - min).max(1e-6))
+    };
 
     let rows: Vec<Element<'_, Message>> = id_results
         .iter()
         .enumerate()
-        .map(|(i, (name, dist))| {
-            let t = (dist / max_dist).clamp(0.0, 1.0) as f32;
+        .map(|(i, (name, score))| {
+            // Higher similarity = better match, so invert t for color/bar
+            let t = 1.0 - ((score - score_range.0) / score_range.1).clamp(0.0, 1.0) as f32;
             let color = Color::from_rgb(0.38 + 0.54 * t, 0.82 - 0.47 * t, 0.48 - 0.13 * t);
             let filled = (((1.0 - t) * 90.0 + 5.0) as u16).max(1);
             let empty = 100u16.saturating_sub(filled);
@@ -128,7 +130,7 @@ fn rankings_content<'a>(id_results: &'a [(String, f64)]) -> Element<'a, Message>
                     .width(Length::Fixed(80.0)),
                 bar,
                 Space::new().width(Length::Fixed(6.0)),
-                text(format!("{:.0}ms", dist)).size(11).color(dim()),
+                text(format!("{:.3}", score)).size(11).color(dim()),
             ]
             .align_y(Vertical::Center)
             .spacing(6)
@@ -148,13 +150,13 @@ fn model_output_content<'a>(id_results: &'a [(String, f64)]) -> Element<'a, Mess
         return placeholder_content("Run Identify to see the best match.");
     }
 
-    let (name, dist) = &id_results[0];
+    let (name, score) = &id_results[0];
 
     column![
         text(name.as_str())
             .size(28)
             .color(Color::from_rgb(0.90, 0.90, 0.90)),
-        text(format!("{:.0}ms avg distance", dist))
+        text(format!("similarity {:.3}", score))
             .size(11)
             .color(dim()),
     ]
