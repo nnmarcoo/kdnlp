@@ -68,7 +68,3 @@ cargo run --release
 - `norm_stats.json` — per-feature z-normalization statistics
 
 The 500 demo profiles are embedded in the binary at compile time (`src/demo_profiles.json`). To regenerate them after retraining, see [`models/`](models/).
-
----
-
-*Accuracy improves with more enrolled sessions per user.*
