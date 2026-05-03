@@ -11,7 +11,6 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
-import onnxruntime as ort
 
 csv.field_size_limit(min(sys.maxsize, 2147483647))
 
@@ -49,16 +48,31 @@ def extract_bigrams(keystrokes):
     return records
 
 
-def embed(session_bigrams, sess, means, stds):
+def embed(session_bigrams, model, means, stds, max_len=50):
     if not session_bigrams:
         return None
+    import torch
+    import torch.nn.functional as F
+    import torch.nn.utils.rnn as rnn_utils
+
+    # Use same max_len crop as training — randomly sample if longer
     data = np.array([[iki, dwell, flight] for _, iki, dwell, flight in session_bigrams], dtype=np.float32)
     data = (data - means) / stds
-    x = data[np.newaxis]  # (1, seq_len, 3)
-    lengths = np.array([len(session_bigrams)], dtype=np.int64)
-    out = sess.run(["embedding"], {"keystrokes": x, "lengths": lengths})[0]
-    emb = out[0]
-    emb = emb / (np.linalg.norm(emb) + 1e-8)
+
+    if len(data) > max_len:
+        data = data[-max_len:]
+
+    length = len(data)
+    x = torch.tensor(data).unsqueeze(0)  # (1, length, 3)
+    lengths = torch.tensor([length])
+
+    model.eval()
+    with torch.no_grad():
+        emb = model(x, lengths)  # uses the real training forward pass
+
+    emb = emb[0].numpy().astype(np.float32)
+    norm = np.linalg.norm(emb)
+    emb = emb / max(norm, 1e-8)
     return emb.tolist()
 
 
@@ -133,8 +147,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", default="../keystrokes/files")
     parser.add_argument("--model_dir", default="D:/kdnlp_model")
-    parser.add_argument("--processed_dir", default=None, help="Path to processed/ dir with train.csv to restrict to held-out eval users")
-    parser.add_argument("--n_eval_users", type=int, default=2000)
+    parser.add_argument("--processed_dir", default=None, help="Path to processed/ dir with train.csv to sample participants from")
+    parser.add_argument("--n_sample", type=int, default=5000, help="Number of participants to sample from train.csv as candidate pool")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n", type=int, default=10, help="Number of profiles to generate")
     parser.add_argument("--out", default="C:/Users/marco/AppData/Roaming/kdnlp/profiles.json")
@@ -146,19 +160,26 @@ def main():
     means = np.array(stats["means"], dtype=np.float32)
     stds = np.array(stats["stds"], dtype=np.float32)
 
-    sess = ort.InferenceSession(str(model_dir / "embedder.onnx"))
+    from lstm import KeystrokeEmbedder, TIMING_COLS
+    import torch
+    state = torch.load(model_dir / "embedder.pt", map_location="cpu", weights_only=True)
+    hidden_size = state["lstm1.weight_ih_l0"].shape[0] // 4
+    embed_dim = state["fc.weight"].shape[0]
+    sess = KeystrokeEmbedder(input_size=len(TIMING_COLS), hidden_size=hidden_size, embed_dim=embed_dim)
+    sess.load_state_dict(state)
+    sess.eval()
 
-    # Optionally restrict to held-out eval users from the training split
+    # Optionally restrict to a random sample of participants from train.csv
     eval_ids = None
     if args.processed_dir:
         import pandas as pd
         import random as rng
         rng.seed(args.seed)
         train_df = pd.read_csv(f"{args.processed_dir}/train.csv", encoding_errors="ignore")
-        all_users = train_df['participant_id'].unique().tolist()
-        rng.shuffle(all_users)
-        eval_ids = set(str(u) for u in all_users[:args.n_eval_users])
-        print(f"Restricting to {len(eval_ids)} held-out eval users")
+        all_ids = train_df['participant_id'].unique().tolist()
+        rng.shuffle(all_ids)
+        eval_ids = set(str(u) for u in all_ids[:args.n_sample])
+        print(f"Restricting to {len(eval_ids)} sampled participants from train.csv")
 
     data_path = Path(args.data_dir)
     files = sorted(data_path.glob("*_keystrokes.txt"))

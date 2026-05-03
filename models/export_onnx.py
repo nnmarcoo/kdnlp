@@ -25,12 +25,11 @@ class EmbedderONNX(nn.Module):
     def forward(self, x, lengths):
         # x: (1, seq_len, 3)   lengths: (1,)
         out1, _ = self.lstm1(x)                         # (1, seq_len, hidden*2)
-        out2, _ = self.lstm2(out1)                      # (1, seq_len, hidden*2)
+        _, (hn2, _) = self.lstm2(out1)                  # hn2: (2, 1, hidden)
 
-        # Gather the hidden state at the last real timestep
-        idx = (lengths - 1).clamp(min=0).long()         # (1,)
-        idx = idx.view(-1, 1, 1).expand(-1, 1, out2.size(2))
-        last = out2.gather(1, idx).squeeze(1)            # (1, hidden*2)
+        # Concatenate forward and backward final hidden states — matches training exactly
+        # hn2[0] = forward direction final state, hn2[1] = backward direction final state
+        last = torch.cat((hn2[0], hn2[1]), dim=1)       # (1, hidden*2)
 
         out = self.fc(last)
         return F.normalize(out, p=2, dim=1)

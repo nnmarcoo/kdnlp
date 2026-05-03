@@ -85,25 +85,27 @@ impl Session {
             let bigram = (prev, ch);
             let iki_ms = t.duration_since(prev_t).as_secs_f64() * 1000.0;
 
-            let vec = self.bigrams.entry(bigram).or_default();
-            let vec_idx = vec.len();
-            vec.push(iki_ms);
+            if iki_ms >= 0.0 && iki_ms <= 2000.0 {
+                let vec = self.bigrams.entry(bigram).or_default();
+                let vec_idx = vec.len();
+                vec.push(iki_ms);
 
-            let log_idx = self.log.len();
-            self.log.push((bigram, iki_ms));
+                let log_idx = self.log.len();
+                self.log.push((bigram, iki_ms));
 
-            let seq_idx = self.sequence.len();
-            self.sequence.push((bigram, iki_ms, 0.0, 0.0));
+                let seq_idx = self.sequence.len();
+                self.sequence.push((bigram, iki_ms, 0.0, 0.0));
 
-            self.pending_flight = Some(PendingFlight {
-                bigram,
-                vec_idx,
-                log_idx,
-                seq_idx,
-                next_press: t,
-                prev_char: prev,
-                press_instant: prev_t,
-            });
+                self.pending_flight = Some(PendingFlight {
+                    bigram,
+                    vec_idx,
+                    log_idx,
+                    seq_idx,
+                    next_press: t,
+                    prev_char: prev,
+                    press_instant: prev_t,
+                });
+            }
         }
 
         let idx = self.events.len();
@@ -139,19 +141,31 @@ impl Session {
                     Some(dur) => dur.as_secs_f64() * 1000.0,
                     None => -(t.duration_since(pf.next_press).as_secs_f64() * 1000.0),
                 };
-                if let Some(val) = self
-                    .bigrams
-                    .get_mut(&pf.bigram)
-                    .and_then(|v| v.get_mut(pf.vec_idx))
-                {
-                    *val = flight_ms;
-                }
-                if let Some(entry) = self.log.get_mut(pf.log_idx) {
-                    entry.1 = flight_ms;
-                }
-                if let Some(entry) = self.sequence.get_mut(pf.seq_idx) {
-                    entry.2 = dwell_ms;
-                    entry.3 = flight_ms;
+                if dwell_ms >= 0.0 && dwell_ms <= 1000.0 {
+                    if let Some(val) = self
+                        .bigrams
+                        .get_mut(&pf.bigram)
+                        .and_then(|v| v.get_mut(pf.vec_idx))
+                    {
+                        *val = flight_ms;
+                    }
+                    if let Some(entry) = self.log.get_mut(pf.log_idx) {
+                        entry.1 = flight_ms;
+                    }
+                    if let Some(entry) = self.sequence.get_mut(pf.seq_idx) {
+                        entry.2 = dwell_ms;
+                        entry.3 = flight_ms;
+                    }
+                } else {
+                    // Dwell out of range — remove this bigram from sequence entirely
+                    self.sequence.remove(pf.seq_idx);
+                    if let Some(v) = self.bigrams.get_mut(&pf.bigram) {
+                        v.remove(pf.vec_idx);
+                        if v.is_empty() {
+                            self.bigrams.remove(&pf.bigram);
+                        }
+                    }
+                    self.log.remove(pf.log_idx);
                 }
             } else {
                 self.pending_flight = Some(pf);

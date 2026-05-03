@@ -93,9 +93,11 @@ pub fn embed(typing: &TypingSession) -> Option<[f32; EMBED_DIM]> {
         return None;
     }
 
+    const MAX_LEN: usize = 50;
+    let start = if seq.len() > MAX_LEN { seq.len() - MAX_LEN } else { 0 };
+    let seq = &seq[start..];
     let length = seq.len();
 
-    // Build (1, length, 3) float32 tensor, z-normalized — no length cap
     let mut data = vec![0f32; length * 3];
     for (i, &(_, iki, dwell, flight)) in seq.iter().enumerate() {
         let raw = [iki as f32, dwell as f32, flight as f32];
@@ -109,13 +111,11 @@ pub fn embed(typing: &TypingSession) -> Option<[f32; EMBED_DIM]> {
     }
 
     let x_tensor = Tensor::<f32>::from_array(([1usize, length, 3], data)).ok()?;
-    let len_tensor = Tensor::<i64>::from_array(([1usize], vec![length as i64])).ok()?;
 
     let mut session = model.session.lock().ok()?;
     let outputs = session
         .run(ort::inputs![
             "keystrokes" => x_tensor,
-            "lengths"    => len_tensor,
         ])
         .ok()?;
 
@@ -123,6 +123,10 @@ pub fn embed(typing: &TypingSession) -> Option<[f32; EMBED_DIM]> {
 
     let mut out = [0f32; EMBED_DIM];
     out.copy_from_slice(&flat[..EMBED_DIM]);
+
+    let norm: f32 = out.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-8);
+    out.iter_mut().for_each(|x| *x /= norm);
+
     Some(out)
 }
 
