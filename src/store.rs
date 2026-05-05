@@ -31,9 +31,13 @@ struct StoredProfile {
     avg_dwell_ms: f64,
     #[serde(default)]
     dwell_count: usize,
+    #[serde(default = "default_session_count")]
+    session_count: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     embedding: Option<Vec<f32>>,
 }
+
+fn default_session_count() -> usize { 1 }
 
 const DEMO_JSON: &str = include_str!("demo_profiles.json");
 
@@ -105,6 +109,7 @@ fn profile_to_stored(p: &Profile) -> StoredProfile {
         wpm: p.wpm,
         avg_dwell_ms: p.avg_dwell_ms,
         dwell_count: p.dwell_count,
+        session_count: p.session_count,
         embedding: p.embedding.as_ref().map(|e| e.to_vec()),
     }
 }
@@ -174,6 +179,7 @@ fn stored_to_profile(s: StoredProfile) -> Profile {
         wpm,
         avg_dwell_ms,
         dwell_count,
+        session_count: s.session_count,
         embedding,
     }
 }

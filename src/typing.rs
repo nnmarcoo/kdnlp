@@ -269,6 +269,7 @@ pub struct Profile {
     pub wpm: f64,
     pub avg_dwell_ms: f64,
     pub dwell_count: usize,
+    pub session_count: usize,
     /// L2-normalized 128-dim embedding from the LSTM model, if available.
     pub embedding: Option<Box<[f32; 128]>>,
 }
@@ -289,6 +290,7 @@ impl Profile {
             wpm: session.wpm(),
             avg_dwell_ms: session.avg_dwell_ms(),
             dwell_count,
+            session_count: 1,
             embedding: crate::embedder::embed(session).map(Box::new),
         }
     }

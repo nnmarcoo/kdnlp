@@ -220,13 +220,14 @@ impl App {
                     existing.dwell_count += new_dwell_count;
                     existing.char_count += new_chars;
                     existing.interval_count += self.session.interval_count();
-                    // Update embedding: average old and new, then re-normalize
+                    // Update embedding: incremental mean across all sessions, then re-normalize
                     if let Some(new_emb) = crate::embedder::embed(&self.session) {
+                        let n = existing.session_count as f32;
                         existing.embedding = Some(Box::new(match &existing.embedding {
                             Some(old_emb) => {
                                 let mut avg = [0f32; 128];
                                 for i in 0..128 {
-                                    avg[i] = (old_emb[i] + new_emb[i]) * 0.5;
+                                    avg[i] = (old_emb[i] * n + new_emb[i]) / (n + 1.0);
                                 }
                                 let norm: f32 =
                                     avg.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-8);
@@ -236,6 +237,7 @@ impl App {
                             None => new_emb,
                         }));
                     }
+                    existing.session_count += 1;
                 } else {
                     self.profiles
                         .push(Profile::from_session(name, &self.session));
